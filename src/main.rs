@@ -1,165 +1,123 @@
 #![feature(seek_stream_len)]
 mod encryption;
 
-use std::io::{BufRead, BufReader, Read};
-use std::vec;
-use std::{env, path::Path};
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use serde::{Deserialize, Serialize};
+use std::{
+    env,
+    fs::File,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+use tokio::{io::AsyncWriteExt, task};
 use walkdir::WalkDir;
 
-async fn encrypt_folder(folderpath: &str) {
-    // Open the folder
-    // Check out all the files
+fn shred_file(filepath: &str) {
+    // Shred the file provided as an argument
+    let mut file = File::create(filepath).expect("Failed to open the file.");
+    let file_len = file.metadata().unwrap().len().try_into().unwrap();
 
-    // Combine it all into one file
-    // Write it all sequentially as one big blob of data
+    file.write_all(&vec![0u8; file_len])
+        .expect("Failed to write to the file.");
+}
 
-    /* Write Structure:
-        filecount: x;
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+struct FileData {
+    metadata: (PathBuf, usize),
+    data: Vec<u8>,
+}
 
-        filesize1,filename1
-        filesize2,filename2
+impl FileData {
+    fn new(file_path: PathBuf, len: usize, data: Vec<u8>) -> Self {
+        return FileData {
+            metadata: (file_path, len),
+            data: data,
+        };
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+struct Container(Vec<FileData>);
 
-    */
+fn create_combined_file(folder_path: &String) {
+    // A container for all the files that have been read
+    // AKA the big blob of data
+    let mut container_vec: Vec<FileData> = Vec::new();
 
-    /*
-        {file data1}
-        {file data2}
-    */
-
-    let mut current_file_data = Vec::new();
-    current_file_data.reserve(5 * 10_usize.pow(6));
-
-    let mut combined_file_data = Vec::new();
-    combined_file_data.reserve(500 * 10_usize.pow(6));
-
-    let mut combined_file_metadata = Vec::new();
-
-    let mut combined_file = File::create("/tmp/testing")
-        .await
-        .expect("Could not open temp file.");
-
-    for entry in WalkDir::new(folderpath) {
+    // Walk the directory and find all the files
+    for entry in WalkDir::new(folder_path) {
         let entry = entry.unwrap();
-        let entry_path = entry.path().display().to_string();
+        let entry_path = entry.path();
 
-        if Path::new(entry_path.as_str()).is_dir() {
+        if Path::new(entry_path).is_dir() {
             continue;
         }
 
-        println!("Path: {}", entry_path);
-        let mut current_file_handle = File::open(&entry_path)
-            .await
-            .expect(format!("Failed to open: {}", entry_path).as_str());
+        let mut file_handle = File::open(entry_path).expect("Failed to open the file.");
 
-        let current_file_size: usize = current_file_handle
-            .read_to_end(&mut current_file_data)
-            .await
+        let mut file_data: Vec<u8> = Vec::new();
+        let file_size: usize = file_handle
+            .read_to_end(&mut file_data)
             .expect("Failed to read the specified file.");
 
-        combined_file_data.append(&mut current_file_data);
-        current_file_data.clear();
-
-        combined_file_metadata.push(format!(
-            "{},{}",
-            current_file_size,
-            entry
-                .path()
-                .strip_prefix(folderpath)
-                .unwrap()
-                .to_str()
-                .unwrap()
-        ))
+        // Construct a new FileData struct
+        let file: FileData = FileData::new(
+            entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+            file_size,
+            file_data,
+        );
+        container_vec.push(file);
     }
 
-    // Encode the metadata
-    let encoded_metadata =
-        bincode::serialize(&combined_file_metadata).expect("Could not encode vector");
-    // Write the encoded metadata
-    combined_file
-        .write_all(format!("{:?}\n", encoded_metadata).as_bytes())
-        .await
-        .expect("Failed to write to the combined file.");
+    // Now that all the files along with their metadata have been
+    // read and stored in the container, encode it.
+    let container: Container = Container(container_vec);
+    let encoded_metadata = bincode::serialize(&container).unwrap();
 
-    combined_file
-        .write_all(&combined_file_data)
-        .await
-        .expect("Failed to write to the combined file.");
-
-    // encrypt the big file
-    // Hash the big file
+    // write it to disk.
+    let mut combined_file = File::create("/tmp/testing").unwrap();
+    combined_file.write_all(&encoded_metadata).unwrap();
 }
 
-async fn decrypt_folder() {
-    // Read the whole big blob of data
-    let file = File::open("/tmp/testing")
-        .await
-        .expect("Failed to open /tmp/testing.");
+fn read_combined_file() -> Vec<FileData> {
+    // Read the encoded data from the disk
+    let mut container_fp = File::open("/tmp/testing").unwrap();
+    let mut container_data = Vec::new();
+    container_fp.read_to_end(&mut container_data).unwrap();
 
-    let mut buffer = BufReader::new(file.into_std().await);
+    let decoded: Container = bincode::deserialize(&container_data[..]).unwrap();
+    let container_vec: Vec<FileData> = decoded.0;
+    return container_vec;
+}
 
-    // Read the first line of the file containing all the metadata
-    let mut files_metadata = String::new();
-    buffer
-        .read_line(&mut files_metadata)
-        .expect("Failed to read /tmp/testing");
-    // Prase the metadata as a Vec<u8> from a string
-    let parsed_metadata: Vec<u8> =
-        // Remove the newline
-        ron::from_str(&files_metadata[..(files_metadata.len() - 1)]).unwrap();
-    // Deserialize the metadata
-    let decoded_combined_metadata: Vec<String> =
-        bincode::deserialize(&parsed_metadata).expect("Failed to decode the combined metadata.");
+async fn recreate_files(combined_data: Vec<FileData>) {
+    let mut task_list = Vec::new();
+    for i in combined_data {
+        let filepath = i.metadata.0;
 
-    let mut combined_data = Vec::new();
-    buffer.read_to_end(&mut combined_data).unwrap();
+        std::fs::create_dir_all(filepath.parent().unwrap()).unwrap();
 
-    let mut prev_size = 0;
-    for i in decoded_combined_metadata {
-        // Split the string into [filesize, filename]
-        let split_string: Vec<&str> = i.split(",").collect();
-        // Extract the size of the current file from the vector
-        let current_size = split_string[0].parse::<usize>().unwrap();
-        // Extract the data from the huge blob by using indexes
-        let current_data = &combined_data[prev_size..(current_size + prev_size)];
+        let mut file_write = tokio::fs::File::create(filepath).await.unwrap();
 
-        println!("{}", split_string[1]);
-        let prefix = std::path::Path::new(split_string[1]).parent().unwrap();
-
-        std::fs::create_dir_all(prefix).unwrap();
-        let mut file_write = File::create(split_string[1]).await.unwrap();
-
-        file_write
-            .write_all(&current_data)
-            .await
-            .expect("Failed to write to new temp file.");
-
-        prev_size = current_size;
+        let write_task = task::spawn(async move {
+            file_write
+                .write_all(&i.data)
+                .await
+                .expect("Failed to write to new temp file.")
+        });
+        task_list.push(write_task);
     }
-}
 
-async fn shred_file(filepath: &str) {
-    // Shred the file provided as an argument
-    let mut file = File::create(filepath)
-        .await
-        .expect("Failed to open the file.");
-
-    let file_len = file.metadata().await.unwrap().len().try_into().unwrap();
-
-    file.write_all(&vec![0u8; file_len])
-        .await
-        .expect("Failed to write to the file.");
+    for val in task_list.into_iter() {
+        val.await.err();
+    }
 }
 
 #[tokio::main]
 async fn main() {
+    shred_file("/tmp/testing");
     let args: Vec<String> = env::args().collect();
 
-    shred_file("/tmp/testing").await;
-    encrypt_folder(&args[1]).await;
-    decrypt_folder().await;
+    create_combined_file(&args[1]);
 
-    // println!("Args: \n{}", args[1]);
-    // shred_file(&args[1]);
+    let combined_data = read_combined_file();
+    recreate_files(combined_data).await;
 }
