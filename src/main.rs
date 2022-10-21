@@ -12,18 +12,6 @@ async fn encrypt_folder(folderpath: &str) {
     // Open the folder
     // Check out all the files
 
-    let mut current_file_data = Vec::new();
-    current_file_data.reserve(5 * 10_usize.pow(6));
-
-    let mut combined_file_data = Vec::new();
-    combined_file_data.reserve(500 * 10_usize.pow(6));
-
-    let mut combined_file_metadata = Vec::new();
-
-    let mut combined_file = File::create("/tmp/testing")
-        .await
-        .expect("Could not open temp file.");
-
     // Combine it all into one file
     // Write it all sequentially as one big blob of data
 
@@ -40,6 +28,18 @@ async fn encrypt_folder(folderpath: &str) {
         {file data2}
     */
 
+    let mut current_file_data = Vec::new();
+    current_file_data.reserve(5 * 10_usize.pow(6));
+
+    let mut combined_file_data = Vec::new();
+    combined_file_data.reserve(500 * 10_usize.pow(6));
+
+    let mut combined_file_metadata = Vec::new();
+
+    let mut combined_file = File::create("/tmp/testing")
+        .await
+        .expect("Could not open temp file.");
+
     for entry in WalkDir::new(folderpath) {
         let entry = entry.unwrap();
         let entry_path = entry.path().display().to_string();
@@ -53,14 +53,13 @@ async fn encrypt_folder(folderpath: &str) {
             .await
             .expect(format!("Failed to open: {}", entry_path).as_str());
 
-        current_file_data.clear();
-
         let current_file_size: usize = current_file_handle
             .read_to_end(&mut current_file_data)
             .await
             .expect("Failed to read the specified file.");
 
         combined_file_data.append(&mut current_file_data);
+        current_file_data.clear();
 
         combined_file_metadata.push(format!(
             "{},{}",
@@ -83,7 +82,6 @@ async fn encrypt_folder(folderpath: &str) {
         .await
         .expect("Failed to write to the combined file.");
 
-    // Write the combined data
     combined_file
         .write_all(&combined_file_data)
         .await
@@ -119,17 +117,21 @@ async fn decrypt_folder() {
 
     let mut prev_size = 0;
     for i in decoded_combined_metadata {
+        // Split the string into [filesize, filename]
         let split_string: Vec<&str> = i.split(",").collect();
+        // Extract the size of the current file from the vector
         let current_size = split_string[0].parse::<usize>().unwrap();
+        // Extract the data from the huge blob by using indexes
         let current_data = &combined_data[prev_size..(current_size + prev_size)];
 
         println!("{}", split_string[1]);
         let prefix = std::path::Path::new(split_string[1]).parent().unwrap();
 
         std::fs::create_dir_all(prefix).unwrap();
-        let mut file = File::create(split_string[1]).await.unwrap();
+        let mut file_write = File::create(split_string[1]).await.unwrap();
 
-        file.write_all(&current_data)
+        file_write
+            .write_all(&current_data)
             .await
             .expect("Failed to write to new temp file.");
 
