@@ -9,25 +9,31 @@ use std::{
 use tokio::{io::AsyncWriteExt, task};
 use walkdir::WalkDir;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FileData {
     pub metadata: (PathBuf, usize),
     pub data: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 impl FileData {
-    fn new(file_path: PathBuf, len: usize, data: Vec<u8>) -> Self {
+    fn new(file_path: PathBuf, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
         return FileData {
             metadata: (file_path, len),
             data: data,
+            signature: signature,
         };
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Container(Vec<FileData>);
 
-pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: Option<&Keypair>) {
+pub fn create_combined_file(
+    folder_path: &String,
+    file_path: &String,
+    keys: &mut Option<&mut Keys>,
+) {
     // A container for all the files that have been read
     // AKA the big blob of data
     let mut container_vec: Vec<FileData> = Vec::new();
@@ -55,17 +61,26 @@ pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: O
             true,
         )
         .expect("Failed to compress the data");
-        match keypair {
-            Some(keypair) => {
+
+        match keys {
+            Some(keys) => {
                 // Encrypt the file
-                let encrypted_data = encrypt(compressed_data, &keypair.key, &keypair.nonce)
-                    .expect("Failed to encrypt the data.");
+                let encrypted_data = encrypt(
+                    compressed_data,
+                    &keys.keypair.secret.to_bytes(),
+                    &keys.nonce,
+                )
+                .expect("Failed to encrypt the data.");
+
+                // Sign the data
+                keys.sign(&encrypted_data);
 
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
                     entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
                     file_size,
                     encrypted_data,
+                    keys.signature.clone(),
                 );
                 container_vec.push(file);
             }
@@ -76,6 +91,7 @@ pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: O
                     entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
                     file_size,
                     compressed_data,
+                    vec![0],
                 );
                 container_vec.push(file);
             }
@@ -110,7 +126,7 @@ pub fn read_combined_file(file_path: String) -> Vec<FileData> {
     return container_vec;
 }
 
-pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Option<&Keypair>) {
+pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
     let mut task_list = Vec::new();
     for i in combined_data {
         let filepath = i.metadata.0;
@@ -122,10 +138,13 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Option<&Keypa
             .await
             .expect("Failed to create the files while recreation");
 
-        match keypair {
-            Some(keypair) => {
+        match keys {
+            Some(keys) => {
+                // Check the signature
+                keys.verify(&i.data, i.signature);
+
                 // Decrypt the file
-                let decrypted_data = decrypt(i.data, &keypair.key, &keypair.nonce)
+                let decrypted_data = decrypt(i.data, &keys.keypair.secret.to_bytes(), &keys.nonce)
                     .expect("Failed to decrypt the data");
 
                 // Decompress the data
@@ -136,7 +155,8 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Option<&Keypa
                     file_write
                         .write_all(&decompressed_data)
                         .await
-                        .expect("Failed to write to new temp file.")
+                        .expect("Failed to write to new temp file.");
+                    file_write.sync_all().await.expect("Failed to sync file");
                 });
                 task_list.push(write_task);
             }
@@ -150,7 +170,8 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Option<&Keypa
                     file_write
                         .write_all(&decompressed_data)
                         .await
-                        .expect("Failed to write to new temp file.")
+                        .expect("Failed to write to new temp file.");
+                    file_write.sync_all().await.expect("Failed to sync file");
                 });
                 task_list.push(write_task);
             }

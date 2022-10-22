@@ -56,7 +56,7 @@ async fn main() {
     if file_path.is_empty() {
         if encrypted {
             // Create a new keypair
-            let keypair: Keypair = Keypair::new();
+            let mut keypair: Keys = Keys::new();
 
             // Get the path to which the keypair is to be written on the disk
             let mut keypair_path = String::new();
@@ -68,30 +68,31 @@ async fn main() {
                 .read_line(&mut keypair_path)
                 .expect("Failed to read from stdin");
 
+            // Create a combined file from the folder with encryption
+            create_combined_file(&folder_path, &output_path, &mut Some(&mut keypair));
+
             // write the keypair to disk
             keypair.save_keypair(Path::new(keypair_path.trim()).to_path_buf());
-            // Create a combined file from the folder with encryption
-            create_combined_file(&folder_path, &output_path, Some(&keypair));
         } else {
             // Create a combined file from the folder without encryption
-            create_combined_file(&folder_path, &output_path, None);
+            create_combined_file(&folder_path, &output_path, &mut None);
         }
     } else {
         if encrypted {
             // Create a keypair from the provided keys
-            let mut keypair_path = String::new();
+            let mut keys_path = String::new();
 
-            print!("Path to keypair: ");
+            print!("Path to keys: ");
             std::io::stdout().flush().expect("Failed to flush stdio.");
             std::io::stdin()
-                .read_line(&mut keypair_path)
+                .read_line(&mut keys_path)
                 .expect("Failed to read from stdin");
 
-            let keypair: Keypair = Keypair::from(Path::new(keypair_path.trim()).to_path_buf());
+            let keys: Keys = Keys::from(Path::new(keys_path.trim()).to_path_buf());
 
             // Recreate the file structure that was combined
             let combined_data = read_combined_file(file_path);
-            recreate_files(combined_data, Some(&keypair)).await;
+            recreate_files(combined_data, Some(&keys)).await;
         } else {
             // Recreate the file structure that was combined
             let combined_data = read_combined_file(file_path);
