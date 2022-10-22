@@ -1,122 +1,87 @@
-pub mod small_files {
+use anyhow::anyhow;
+use chacha20poly1305::{aead::*, *};
+use rand::{distributions::Alphanumeric, Rng};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+};
 
-    use anyhow::anyhow;
-    use chacha20poly1305::{aead::*, *};
-    use std::fs;
-    use std::result::Result;
+use std::result::Result;
 
-    fn encrypt(
-        filepath: &str,
-        dist: &str,
-        key: &[u8; 32],
-        nonce: &[u8; 24],
-    ) -> Result<(), anyhow::Error> {
-        let cipher = XChaCha20Poly1305::new(key.into());
-
-        let file_data = fs::read(filepath)?;
-
-        let encrypted_file = cipher
-            .encrypt(nonce.into(), file_data.as_ref())
-            .map_err(|err| anyhow!("Encrypting small file: {}", err))?;
-
-        fs::write(&dist, encrypted_file)?;
-
-        Ok(())
-    }
-
-    fn decrypt(
-        encrypted_file_path: &str,
-        dist: &str,
-        key: &[u8; 32],
-        nonce: &[u8; 24],
-    ) -> Result<(), anyhow::Error> {
-        let cipher = XChaCha20Poly1305::new(key.into());
-
-        let file_data = fs::read(encrypted_file_path)?;
-
-        let decrypted_file = cipher
-            .decrypt(nonce.into(), file_data.as_ref())
-            .map_err(|err| anyhow!("Decrypting small file: {}", err))?;
-
-        fs::write(&dist, decrypted_file)?;
-
-        Ok(())
-    }
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub struct Keypair {
+    pub key: [u8; 32],
+    pub nonce: [u8; 24],
 }
 
-pub mod large_files {
+pub fn encrypt(
+    file_data: Vec<u8>,
+    key: &[u8; 32],
+    nonce: &[u8; 24],
+) -> Result<Vec<u8>, anyhow::Error> {
+    let cipher = XChaCha20Poly1305::new(key.into());
 
-    use anyhow::anyhow;
-    use chacha20poly1305::{aead::*, *};
-    use std::fs::File;
-    use std::io::{Read, Write};
-    use std::result::Result;
+    let encrypted_file = cipher
+        .encrypt(nonce.into(), file_data.as_ref())
+        .map_err(|err| anyhow!("Encrypting small file: {}", err))?;
 
-    fn encrypt(
-        source_file_path: &str,
-        dist_file_path: &str,
-        key: &[u8; 32],
-        nonce: &[u8; 19],
-    ) -> Result<(), anyhow::Error> {
-        let aead = XChaCha20Poly1305::new(key.as_ref().into());
-        let mut stream_encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
-        const BUFFER_LEN: usize = 500;
-        let mut buffer = [0u8; BUFFER_LEN];
+    Ok(encrypted_file)
+}
 
-        let mut source_file = File::open(source_file_path)?;
-        let mut dist_file = File::create(dist_file_path)?;
-        loop {
-            let read_count = source_file.read(&mut buffer)?;
+pub fn decrypt(
+    file_data: Vec<u8>,
+    key: &[u8; 32],
+    nonce: &[u8; 24],
+) -> Result<Vec<u8>, anyhow::Error> {
+    let cipher = XChaCha20Poly1305::new(key.into());
 
-            if read_count == BUFFER_LEN {
-                let ciphertext = stream_encryptor
-                    .encrypt_next(buffer.as_slice())
-                    .map_err(|err| anyhow!("Encrypting large file: {}", err))?;
-                dist_file.write(&ciphertext)?;
-            } else {
-                let ciphertext = stream_encryptor
-                    .encrypt_last(&buffer[..read_count])
-                    .map_err(|err| anyhow!("Encrypting large file: {}", err))?;
-                dist_file.write(&ciphertext)?;
-                break;
-            }
+    let decrypted_file = cipher
+        .decrypt(nonce.into(), file_data.as_ref())
+        .map_err(|err| anyhow!("Decrypting small file: {}", err))?;
+
+    Ok(decrypted_file)
+}
+
+impl Keypair {
+    pub fn new() -> Self {
+        // For now, just make the key and the nonce a bunch of random characters.
+        let random_string: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(24)
+            .map(char::from)
+            .collect();
+
+        let nonce: [u8; 24] = random_string.as_bytes().try_into().unwrap();
+        let key: [u8; 32] = blake3::hash(random_string.as_bytes()).try_into().unwrap();
+
+        Keypair {
+            key: key,
+            nonce: nonce,
         }
-
-        Ok(())
     }
 
-    fn decrypt(
-        encrypted_file_path: &str,
-        dist: &str,
-        key: &[u8; 32],
-        nonce: &[u8; 19],
-    ) -> Result<(), anyhow::Error> {
-        let aead = XChaCha20Poly1305::new(key.as_ref().into());
-        let mut stream_decryptor = stream::DecryptorBE32::from_aead(aead, nonce.as_ref().into());
-        const BUFFER_LEN: usize = 500 + 16;
-        let mut buffer = [0u8; BUFFER_LEN];
+    pub fn save_keypair(&self, filepath: PathBuf) {
+        // Encode the keypair with bincode and write it to disk.
+        let encoded_keypair = bincode::serialize(&self).unwrap();
+        let mut keyfile =
+            File::create(filepath).expect("Could not open keyfile, please verify that it exists");
+        keyfile
+            .write_all(&encoded_keypair)
+            .expect("Failed to write the key to disk");
+    }
 
-        let mut encrypted_file = File::open(encrypted_file_path)?;
-        let mut dist_file = File::create(dist)?;
-        loop {
-            let read_count = encrypted_file.read(&mut buffer)?;
+    pub fn from(filepath: PathBuf) -> Self {
+        // Read the keypair, decode it with bincode and return a keypair object
+        let mut keyfile =
+            File::open(filepath).expect("Could not open keyfile, please verify that it exists");
 
-            if read_count == BUFFER_LEN {
-                let plaintext = stream_decryptor
-                    .decrypt_next(buffer.as_slice())
-                    .map_err(|err| anyhow!("Decrypting large file: {}", err))?;
-                dist_file.write(&plaintext)?;
-            } else if read_count == 0 {
-                break;
-            } else {
-                let plaintext = stream_decryptor
-                    .decrypt_last(&buffer[..read_count])
-                    .map_err(|err| anyhow!("Decrypting large file: {}", err))?;
-                dist_file.write(&plaintext)?;
-                break;
-            }
-        }
+        let mut keyfile_contents: Vec<u8> = Vec::new();
+        keyfile.read_to_end(&mut keyfile_contents).unwrap();
 
-        Ok(())
+        let decoded: Keypair = bincode::deserialize(&keyfile_contents[..]).unwrap();
+
+        return decoded;
     }
 }
