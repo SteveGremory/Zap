@@ -53,8 +53,13 @@ impl Keypair {
             .map(char::from)
             .collect();
 
-        let nonce: [u8; 24] = random_string.as_bytes().try_into().unwrap();
-        let key: [u8; 32] = blake3::hash(random_string.as_bytes()).try_into().unwrap();
+        let nonce: [u8; 24] = random_string
+            .as_bytes()
+            .try_into()
+            .expect("Failed to initialise the nonce");
+        let key: [u8; 32] = blake3::hash(random_string.as_bytes())
+            .try_into()
+            .expect("Failed to initalise the key");
 
         Keypair {
             key: key,
@@ -64,7 +69,7 @@ impl Keypair {
 
     pub fn save_keypair(&self, filepath: PathBuf) {
         // Encode the keypair with bincode and write it to disk.
-        let encoded_keypair = bincode::serialize(&self).unwrap();
+        let encoded_keypair = bincode::serialize(&self).expect("Failed to serialise keyfile");
         let mut keyfile =
             File::create(filepath).expect("Could not open keyfile, please verify that it exists");
         keyfile
@@ -78,9 +83,12 @@ impl Keypair {
             File::open(filepath).expect("Could not open keyfile, please verify that it exists");
 
         let mut keyfile_contents: Vec<u8> = Vec::new();
-        keyfile.read_to_end(&mut keyfile_contents).unwrap();
+        keyfile
+            .read_to_end(&mut keyfile_contents)
+            .expect("Failed to read the keypair");
 
-        let decoded: Keypair = bincode::deserialize(&keyfile_contents[..]).unwrap();
+        let decoded: Keypair =
+            bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile");
 
         return decoded;
     }

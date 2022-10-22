@@ -27,7 +27,7 @@ impl FileData {
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Container(Vec<FileData>);
 
-pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: Keypair) {
+pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: Option<&Keypair>) {
     // A container for all the files that have been read
     // AKA the big blob of data
     let mut container_vec: Vec<FileData> = Vec::new();
@@ -54,63 +54,107 @@ pub fn create_combined_file(folder_path: &String, file_path: &String, keypair: K
             Some(lz4::block::CompressionMode::HIGHCOMPRESSION(8)),
             true,
         )
-        .unwrap();
+        .expect("Failed to compress the data");
+        match keypair {
+            Some(keypair) => {
+                // Encrypt the file
+                let encrypted_data = encrypt(compressed_data, &keypair.key, &keypair.nonce)
+                    .expect("Failed to encrypt the data.");
 
-        // Encrypt the file
-        let encrypted_data = encrypt(compressed_data, &keypair.key, &keypair.nonce)
-            .expect("Failed to encrypt the data.");
+                // Construct a new FileData struct
+                let file: FileData = FileData::new(
+                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    file_size,
+                    encrypted_data,
+                );
+                container_vec.push(file);
+            }
 
-        // Construct a new FileData struct
-        let file: FileData = FileData::new(
-            entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
-            file_size,
-            encrypted_data,
-        );
-        container_vec.push(file);
+            None => {
+                // Construct a new FileData struct
+                let file: FileData = FileData::new(
+                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    file_size,
+                    compressed_data,
+                );
+                container_vec.push(file);
+            }
+        }
     }
 
     // Now that all the files along with their metadata have been
     // read and stored in the container, encode it.
     let container: Container = Container(container_vec);
-    let encoded_metadata = bincode::serialize(&container).unwrap();
+    let encoded_metadata =
+        bincode::serialize(&container).expect("Failed to serialize the metadata");
 
     // write it to disk.
-    let mut combined_file = File::create(file_path).unwrap();
-    combined_file.write_all(&encoded_metadata).unwrap();
+    let mut combined_file =
+        File::create(file_path).expect("Could not open/create the combined file.");
+    combined_file
+        .write_all(&encoded_metadata)
+        .expect("Failed to write the combined file");
 }
 
 pub fn read_combined_file(file_path: String) -> Vec<FileData> {
     // Read the encoded data from the disk
-    let mut container_fp = File::open(file_path).unwrap();
+    let mut container_fp = File::open(file_path).expect("Failed to open the combined file");
     let mut container_data = Vec::new();
-    container_fp.read_to_end(&mut container_data).unwrap();
+    container_fp
+        .read_to_end(&mut container_data)
+        .expect("Failed to read the combined file");
 
-    let decoded: Container = bincode::deserialize(&container_data[..]).unwrap();
+    let decoded: Container =
+        bincode::deserialize(&container_data[..]).expect("Failed to decode the combined file");
     let container_vec: Vec<FileData> = decoded.0;
     return container_vec;
 }
 
-pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Keypair) {
+pub async fn recreate_files(combined_data: Vec<FileData>, keypair: Option<&Keypair>) {
     let mut task_list = Vec::new();
     for i in combined_data {
         let filepath = i.metadata.0;
 
-        std::fs::create_dir_all(filepath.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(filepath.parent().unwrap())
+            .expect("Failed to create all the required directories/subdirectories");
 
-        let mut file_write = tokio::fs::File::create(filepath).await.unwrap();
-        // Decrypt the file
-        let decrypted_data = decrypt(i.data, &keypair.key, &keypair.nonce).unwrap();
+        let mut file_write = tokio::fs::File::create(filepath)
+            .await
+            .expect("Failed to create the files while recreation");
 
-        // Decompress the data
-        let decompressed_data = decompress(&decrypted_data, None).unwrap();
+        match keypair {
+            Some(keypair) => {
+                // Decrypt the file
+                let decrypted_data = decrypt(i.data, &keypair.key, &keypair.nonce)
+                    .expect("Failed to decrypt the data");
 
-        let write_task = task::spawn(async move {
-            file_write
-                .write_all(&decompressed_data)
-                .await
-                .expect("Failed to write to new temp file.")
-        });
-        task_list.push(write_task);
+                // Decompress the data
+                let decompressed_data =
+                    decompress(&decrypted_data, None).expect("Failed to decompress the data");
+
+                let write_task = task::spawn(async move {
+                    file_write
+                        .write_all(&decompressed_data)
+                        .await
+                        .expect("Failed to write to new temp file.")
+                });
+                task_list.push(write_task);
+            }
+
+            None => {
+                // Decompress the data
+                let decompressed_data =
+                    decompress(&i.data, None).expect("Failed to decompress the data.");
+
+                let write_task = task::spawn(async move {
+                    file_write
+                        .write_all(&decompressed_data)
+                        .await
+                        .expect("Failed to write to new temp file.")
+                });
+                task_list.push(write_task);
+            }
+        }
     }
 
     for val in task_list.into_iter() {
