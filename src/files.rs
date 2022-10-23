@@ -57,7 +57,7 @@ pub fn create_combined_file(
         // Compress the file data
         let compressed_data = compress(
             &file_data,
-            Some(lz4::block::CompressionMode::HIGHCOMPRESSION(8)),
+            Some(lz4::block::CompressionMode::HIGHCOMPRESSION(10)),
             true,
         )
         .expect("Failed to compress the data");

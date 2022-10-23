@@ -8,6 +8,7 @@ use argparse::{ArgumentParser, Store, StoreTrue};
 use std::io::Write;
 use std::path::Path;
 
+// TODO: Fix the compression: Divide the file into smaller of 1GB
 #[tokio::main]
 async fn main() {
     let mut folder_path = String::new();
