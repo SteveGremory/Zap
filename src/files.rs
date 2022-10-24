@@ -18,9 +18,9 @@ pub struct FileData {
 }
 
 impl FileData {
-    fn new(file_path: PathBuf, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
+    fn new<P: AsRef<Path>>(file_path: P, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
         FileData {
-            path: file_path,
+            path: file_path.as_ref().to_owned(),
             len,
             data,
             signature,

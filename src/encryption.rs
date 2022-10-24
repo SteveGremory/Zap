@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
+    path::Path,
     result::Result,
 };
 
@@ -36,7 +36,7 @@ impl Keys {
         }
     }
 
-    pub fn save_keypair(&self, filepath: PathBuf) {
+    pub fn save_keypair<P: AsRef<Path>>(&self, filepath: P) {
         // Encode the keypair with bincode and write it to disk.
         let encoded_keypair = bincode::serialize(&self).expect("Failed to serialise keyfile");
         let mut keyfile =
@@ -46,7 +46,9 @@ impl Keys {
             .expect("Failed to write the key to disk");
     }
 
-    pub fn from(mut filepath: PathBuf) -> Self {
+    pub fn from<P: AsRef<Path>>(filepath: P) -> Self {
+        let mut filepath = filepath.as_ref().to_owned();
+
         // Read the keypair, decode it with bincode and return a keypair object
         if !filepath.ends_with(".sfkp") {
             filepath.push(".sfkp");
