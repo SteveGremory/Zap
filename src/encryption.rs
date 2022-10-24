@@ -70,8 +70,8 @@ impl Keys {
         self.signature = bincode::serialize(&signature).unwrap();
     }
 
-    pub fn verify(&self, data: &[u8], signature: Vec<u8>) {
-        let decoded_signature: Signature = bincode::deserialize(&signature).unwrap();
+    pub fn verify(&self, data: &[u8], signature: &[u8]) {
+        let decoded_signature: Signature = bincode::deserialize(signature).unwrap();
         let verification = self.keypair.public.verify_strict(data, &decoded_signature);
 
         // TODO: Do this better
