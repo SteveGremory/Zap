@@ -53,7 +53,7 @@ async fn main() {
     }
 
     // If a combined file is to be created, do so
-    // if not, then recreate the file strucutre from the combined file.
+    // if not, then recreate the file structure from the combined file.
     if file_path.is_empty() {
         if encrypted {
             // Create a new keypair
