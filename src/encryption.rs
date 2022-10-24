@@ -47,12 +47,13 @@ impl Keys {
     }
 
     pub fn from<P: AsRef<Path>>(filepath: P) -> Self {
-        let mut filepath = filepath.as_ref().to_owned();
+        let filepath = filepath.as_ref().to_owned();
 
+        // TODO: This is really not working as expected
         // Read the keypair, decode it with bincode and return a keypair object
-        if !filepath.ends_with(".sfkp") {
-            filepath.push(".sfkp");
-        };
+        //if !filepath.ends_with(".sfkp") {
+        //    filepath.push(".sfkp");
+        //};
 
         let mut keyfile =
             File::open(filepath).expect("Could not open keyfile, please verify that it exists");

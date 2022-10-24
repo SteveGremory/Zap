@@ -14,28 +14,31 @@ pub struct FileData {
     pub path: PathBuf,
     pub len: usize,
     pub data: Vec<u8>,
-    pub signature: Vec<u8>,
 }
 
 impl FileData {
-    fn new<P: AsRef<Path>>(file_path: P, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
+    fn new<P: AsRef<Path>>(file_path: P, len: usize, data: Vec<u8>) -> Self {
         FileData {
             path: file_path.as_ref().to_owned(),
             len,
             data,
-            signature,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Container(Vec<FileData>);
+pub struct Container {
+    files: Vec<FileData>,
+    signature: Vec<u8>,
+}
 
-pub fn create_combined_file(
-    folder_path: &String,
-    file_path: &String,
-    mut opt_keys: Option<&mut Keys>,
-) {
+impl Container {
+    fn new(files: Vec<FileData>, signature: Vec<u8>) -> Self {
+        Container { files, signature }
+    }
+}
+
+pub fn create_combined_file(folder_path: &String, file_path: &String, opt_keys: Option<&mut Keys>) {
     // A container for all the files that have been read
     // AKA the big blob of data
     let mut container_vec: Vec<FileData> = Vec::with_capacity(15);
@@ -66,22 +69,19 @@ pub fn create_combined_file(
         )
         .expect("Failed to compress the data");
 
+        // Only encrypt the file if the keys are supplied
         match opt_keys {
-            Some(ref mut keys) => {
+            Some(ref keys) => {
                 // Encrypt the file
                 let encrypted_data =
                     encrypt(compressed_data, keys.keypair.secret.as_bytes(), &keys.nonce)
                         .expect("Failed to encrypt the data.");
-
-                // Sign the data
-                keys.sign(&encrypted_data);
 
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
                     entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     encrypted_data,
-                    keys.signature.clone(),
                 );
                 container_vec.push(file);
             }
@@ -92,7 +92,6 @@ pub fn create_combined_file(
                     entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     compressed_data,
-                    vec![0],
                 );
                 container_vec.push(file);
             }
@@ -101,9 +100,15 @@ pub fn create_combined_file(
 
     // Now that all the files along with their metadata have been
     // read and stored in the container, encode it.
-    let container: Container = Container(container_vec);
+
+    let container: Container = Container::new(container_vec, vec![0]);
     let encoded_container =
         bincode::serialize(&container).expect("Failed to serialize the metadata");
+
+    // Sign the data only if the keys are supplied.
+    if let Some(keys) = opt_keys {
+        keys.sign(&encoded_container);
+    }
 
     // write it to disk.
     let mut combined_file =
@@ -114,7 +119,7 @@ pub fn create_combined_file(
         .expect("Failed to write the combined file");
 }
 
-pub fn read_combined_file(file_path: String) -> Vec<FileData> {
+pub fn read_combined_file(file_path: String, keys: Option<&Keys>) -> Vec<FileData> {
     // Read the encoded data from the disk
     let mut container_fp = File::open(file_path).expect("Failed to open the combined file");
     let mut container_data = Vec::new();
@@ -123,10 +128,16 @@ pub fn read_combined_file(file_path: String) -> Vec<FileData> {
         .read_to_end(&mut container_data)
         .expect("Failed to read the combined file");
 
+    // Verify the data only if the keys are supplied.
+    if let Some(keys) = keys {
+        keys.verify(&container_data, &keys.signature);
+        println!("I'm actually checking the signature...{:?}", keys.signature);
+    }
+
     let decoded: Container =
         bincode::deserialize(&container_data[..]).expect("Failed to decode the combined file");
 
-    let container_vec: Vec<FileData> = decoded.0;
+    let container_vec: Vec<FileData> = decoded.files;
 
     container_vec
 }
@@ -147,11 +158,11 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
         match keys {
             Some(keys) => {
                 // Check the signature
-                keys.verify(&file_data.data, &file_data.signature);
 
                 // Decrypt the file
-                let decrypted_data = decrypt(file_data.data, keys.keypair.secret.as_bytes(), &keys.nonce)
-                    .expect("Failed to decrypt the data");
+                let decrypted_data =
+                    decrypt(file_data.data, keys.keypair.secret.as_bytes(), &keys.nonce)
+                        .expect("Failed to decrypt the data");
 
                 // Decompress the data
                 let decompressed_data =

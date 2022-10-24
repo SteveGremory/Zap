@@ -91,7 +91,7 @@ async fn main() {
         let keys = Keys::from(keys_path.trim());
 
         // Recreate the file structure that was combined
-        let combined_data = read_combined_file(file_path);
+        let combined_data = read_combined_file(file_path, Some(&keys));
         recreate_files(combined_data, Some(&keys)).await;
     }
 }
