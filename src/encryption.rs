@@ -19,7 +19,7 @@ pub struct Keys {
 
 impl Keys {
     pub fn new() -> Self {
-        let mut csprng = OsRng {};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
 
         let nonce: String = rand::thread_rng()
