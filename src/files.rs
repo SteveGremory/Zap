@@ -11,18 +11,20 @@ use walkdir::WalkDir;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FileData {
-    pub metadata: (PathBuf, usize),
+    pub path: PathBuf,
+    pub len: usize,
     pub data: Vec<u8>,
     pub signature: Vec<u8>,
 }
 
 impl FileData {
     fn new(file_path: PathBuf, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
-        return FileData {
-            metadata: (file_path, len),
-            data: data,
-            signature: signature,
-        };
+        FileData {
+            path: file_path,
+            len,
+            data,
+            signature,
+        }
     }
 }
 
@@ -32,11 +34,11 @@ pub struct Container(Vec<FileData>);
 pub fn create_combined_file(
     folder_path: &String,
     file_path: &String,
-    keys: &mut Option<&mut Keys>,
+    mut opt_keys: Option<&mut Keys>,
 ) {
     // A container for all the files that have been read
     // AKA the big blob of data
-    let mut container_vec: Vec<FileData> = Vec::new();
+    let mut container_vec: Vec<FileData> = Vec::with_capacity(15);
 
     // Walk the directory and find all the files
     for entry in WalkDir::new(folder_path) {
@@ -54,23 +56,22 @@ pub fn create_combined_file(
             .read_to_end(&mut file_data)
             .expect("Failed to read the specified file.");
 
+        // Compress + encrypt + sign the file
+
         // Compress the file data
         let compressed_data = compress(
             &file_data,
-            Some(lz4::block::CompressionMode::HIGHCOMPRESSION(10)),
+            Some(lz4::block::CompressionMode::FAST(10)),
             true,
         )
         .expect("Failed to compress the data");
 
-        match keys {
-            Some(keys) => {
+        match opt_keys {
+            Some(ref mut keys) => {
                 // Encrypt the file
-                let encrypted_data = encrypt(
-                    compressed_data,
-                    &keys.keypair.secret.to_bytes(),
-                    &keys.nonce,
-                )
-                .expect("Failed to encrypt the data.");
+                let encrypted_data =
+                    encrypt(compressed_data, keys.keypair.secret.as_bytes(), &keys.nonce)
+                        .expect("Failed to encrypt the data.");
 
                 // Sign the data
                 keys.sign(&encrypted_data);
@@ -106,7 +107,8 @@ pub fn create_combined_file(
 
     // write it to disk.
     let mut combined_file =
-        File::create(file_path).expect("Could not open/create the combined file.");
+        File::create(format!("{file_path}.sf")).expect("Could not open/create the combined file.");
+
     combined_file
         .write_all(&encoded_metadata)
         .expect("Failed to write the combined file");
@@ -116,20 +118,24 @@ pub fn read_combined_file(file_path: String) -> Vec<FileData> {
     // Read the encoded data from the disk
     let mut container_fp = File::open(file_path).expect("Failed to open the combined file");
     let mut container_data = Vec::new();
+
     container_fp
         .read_to_end(&mut container_data)
         .expect("Failed to read the combined file");
 
     let decoded: Container =
         bincode::deserialize(&container_data[..]).expect("Failed to decode the combined file");
+
     let container_vec: Vec<FileData> = decoded.0;
-    return container_vec;
+
+    container_vec
 }
 
 pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
     let mut task_list = Vec::new();
+
     for i in combined_data {
-        let filepath = i.metadata.0;
+        let filepath = i.path;
 
         std::fs::create_dir_all(filepath.parent().unwrap())
             .expect("Failed to create all the required directories/subdirectories");
@@ -144,7 +150,7 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
                 keys.verify(&i.data, i.signature);
 
                 // Decrypt the file
-                let decrypted_data = decrypt(i.data, &keys.keypair.secret.to_bytes(), &keys.nonce)
+                let decrypted_data = decrypt(i.data, keys.keypair.secret.as_bytes(), &keys.nonce)
                     .expect("Failed to decrypt the data");
 
                 // Decompress the data
@@ -156,8 +162,10 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
                         .write_all(&decompressed_data)
                         .await
                         .expect("Failed to write to new temp file.");
+
                     file_write.sync_all().await.expect("Failed to sync file");
                 });
+
                 task_list.push(write_task);
             }
 
@@ -171,8 +179,10 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
                         .write_all(&decompressed_data)
                         .await
                         .expect("Failed to write to new temp file.");
+
                     file_write.sync_all().await.expect("Failed to sync file");
                 });
+
                 task_list.push(write_task);
             }
         }

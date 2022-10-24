@@ -29,7 +29,7 @@ impl Keys {
             .collect();
 
         Keys {
-            keypair: keypair,
+            keypair,
             nonce: nonce.as_bytes().try_into().unwrap(),
             signature: vec![0],
         }
@@ -45,8 +45,12 @@ impl Keys {
             .expect("Failed to write the key to disk");
     }
 
-    pub fn from(filepath: PathBuf) -> Self {
+    pub fn from(mut filepath: PathBuf) -> Self {
         // Read the keypair, decode it with bincode and return a keypair object
+        if !filepath.ends_with(".sfkp") {
+            filepath.push(".sfkp");
+        };
+
         let mut keyfile =
             File::open(filepath).expect("Could not open keyfile, please verify that it exists");
 
@@ -58,7 +62,7 @@ impl Keys {
         let decoded: Keys =
             bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile");
 
-        return decoded;
+        decoded
     }
 
     pub fn sign(&mut self, data: &[u8]) {
@@ -71,7 +75,7 @@ impl Keys {
         let verification = self.keypair.public.verify_strict(data, &decoded_signature);
 
         // TODO: Do this better
-        assert_eq!(verification.is_ok(), true);
+        assert!(verification.is_ok());
     }
 }
 

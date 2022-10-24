@@ -70,34 +70,28 @@ async fn main() {
                 .expect("Failed to read from stdin");
 
             // Create a combined file from the folder with encryption
-            create_combined_file(&folder_path, &output_path, &mut Some(&mut keypair));
+            create_combined_file(&folder_path, &output_path, Some(&mut keypair));
 
             // write the keypair to disk
-            keypair.save_keypair(Path::new(keypair_path.trim()).to_path_buf());
+            keypair.save_keypair(Path::new(&format!("{}.sfkp", keypair_path.trim())).to_path_buf());
         } else {
             // Create a combined file from the folder without encryption
-            create_combined_file(&folder_path, &output_path, &mut None);
+            create_combined_file(&folder_path, &output_path, None);
         }
     } else {
-        if encrypted {
-            // Create a keypair from the provided keys
-            let mut keys_path = String::new();
+        // Create a keypair from the provided keys
+        let mut keys_path = String::new();
 
-            print!("Path to keys: ");
-            std::io::stdout().flush().expect("Failed to flush stdio.");
-            std::io::stdin()
-                .read_line(&mut keys_path)
-                .expect("Failed to read from stdin");
+        print!("Path to keys: ");
+        std::io::stdout().flush().expect("Failed to flush stdio.");
+        std::io::stdin()
+            .read_line(&mut keys_path)
+            .expect("Failed to read from stdin");
 
-            let keys: Keys = Keys::from(Path::new(keys_path.trim()).to_path_buf());
+        let keys: Keys = Keys::from(Path::new(keys_path.trim()).to_path_buf());
 
-            // Recreate the file structure that was combined
-            let combined_data = read_combined_file(file_path);
-            recreate_files(combined_data, Some(&keys)).await;
-        } else {
-            // Recreate the file structure that was combined
-            let combined_data = read_combined_file(file_path);
-            recreate_files(combined_data, None).await;
-        }
+        // Recreate the file structure that was combined
+        let combined_data = read_combined_file(file_path);
+        recreate_files(combined_data, Some(&keys)).await;
     }
 }
