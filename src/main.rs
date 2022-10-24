@@ -14,7 +14,7 @@ async fn main() {
     let mut folder_path = String::new();
     let mut output_path = String::new();
     let mut file_path = String::new();
-    let mut encrypted: bool = false;
+    let mut encrypted = false;
 
     {
         let mut ap = ArgumentParser::new();
@@ -57,7 +57,7 @@ async fn main() {
     if file_path.is_empty() {
         if encrypted {
             // Create a new keypair
-            let mut keypair: Keys = Keys::new();
+            let mut keypair = Keys::new();
 
             // Get the path to which the keypair is to be written on the disk
             let mut keypair_path = String::new();
@@ -73,7 +73,7 @@ async fn main() {
             create_combined_file(&folder_path, &output_path, Some(&mut keypair));
 
             // write the keypair to disk
-            keypair.save_keypair(Path::new(&format!("{}.sfkp", keypair_path.trim())).to_path_buf());
+            keypair.save_keypair(Path::new(&format!("{}.sfkp", keypair_path.trim())));
         } else {
             // Create a combined file from the folder without encryption
             create_combined_file(&folder_path, &output_path, None);
@@ -83,12 +83,12 @@ async fn main() {
         let mut keys_path = String::new();
 
         print!("Path to keys: ");
-        std::io::stdout().flush().expect("Failed to flush stdio.");
+        std::io::stdout().flush().expect("Failed to flush stdout.");
         std::io::stdin()
             .read_line(&mut keys_path)
             .expect("Failed to read from stdin");
 
-        let keys: Keys = Keys::from(Path::new(keys_path.trim()).to_path_buf());
+        let keys = Keys::from(Path::new(keys_path.trim()));
 
         // Recreate the file structure that was combined
         let combined_data = read_combined_file(file_path);
