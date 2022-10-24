@@ -62,10 +62,7 @@ impl Keys {
             .read_to_end(&mut keyfile_contents)
             .expect("Failed to read the keypair");
 
-        let decoded: Keys =
-            bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile");
-
-        decoded
+        bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile")
     }
 
     pub fn sign(&mut self, data: &[u8]) {

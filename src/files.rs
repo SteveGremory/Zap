@@ -78,7 +78,7 @@ pub fn create_combined_file(
 
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
-                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     encrypted_data,
                     keys.signature.clone(),
@@ -89,7 +89,7 @@ pub fn create_combined_file(
             None => {
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
-                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     compressed_data,
                     vec![0],
