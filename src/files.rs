@@ -102,7 +102,7 @@ pub fn create_combined_file(
     // Now that all the files along with their metadata have been
     // read and stored in the container, encode it.
     let container: Container = Container(container_vec);
-    let encoded_metadata =
+    let encoded_container =
         bincode::serialize(&container).expect("Failed to serialize the metadata");
 
     // write it to disk.
@@ -110,7 +110,7 @@ pub fn create_combined_file(
         File::create(format!("{file_path}.sf")).expect("Could not open/create the combined file.");
 
     combined_file
-        .write_all(&encoded_metadata)
+        .write_all(&encoded_container)
         .expect("Failed to write the combined file");
 }
 
