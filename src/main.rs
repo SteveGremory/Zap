@@ -73,7 +73,7 @@ async fn main() {
             create_combined_file(&folder_path, &output_path, Some(&mut keypair));
 
             // write the keypair to disk
-            keypair.save_keypair(Path::new(&format!("{}.sfkp", keypair_path.trim())));
+            keypair.save_keypair(format!("{}.sfkp", keypair_path.trim()));
         } else {
             // Create a combined file from the folder without encryption
             create_combined_file(&folder_path, &output_path, None);
@@ -88,7 +88,7 @@ async fn main() {
             .read_line(&mut keys_path)
             .expect("Failed to read from stdin");
 
-        let keys = Keys::from(Path::new(keys_path.trim()));
+        let keys = Keys::from(keys_path.trim());
 
         // Recreate the file structure that was combined
         let combined_data = read_combined_file(file_path);
