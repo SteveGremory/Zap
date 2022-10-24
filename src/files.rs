@@ -18,9 +18,9 @@ pub struct FileData {
 }
 
 impl FileData {
-    fn new(file_path: PathBuf, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
+    fn new<P: AsRef<Path>>(file_path: P, len: usize, data: Vec<u8>, signature: Vec<u8>) -> Self {
         FileData {
-            path: file_path,
+            path: file_path.as_ref().to_owned(),
             len,
             data,
             signature,
@@ -78,7 +78,7 @@ pub fn create_combined_file(
 
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
-                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     encrypted_data,
                     keys.signature.clone(),
@@ -89,7 +89,7 @@ pub fn create_combined_file(
             None => {
                 // Construct a new FileData struct
                 let file: FileData = FileData::new(
-                    entry_path.strip_prefix(folder_path).unwrap().to_path_buf(),
+                    entry_path.strip_prefix(folder_path).unwrap(),
                     file_size,
                     compressed_data,
                     vec![0],
@@ -102,7 +102,7 @@ pub fn create_combined_file(
     // Now that all the files along with their metadata have been
     // read and stored in the container, encode it.
     let container: Container = Container(container_vec);
-    let encoded_metadata =
+    let encoded_container =
         bincode::serialize(&container).expect("Failed to serialize the metadata");
 
     // write it to disk.
@@ -110,7 +110,7 @@ pub fn create_combined_file(
         File::create(format!("{file_path}.sf")).expect("Could not open/create the combined file.");
 
     combined_file
-        .write_all(&encoded_metadata)
+        .write_all(&encoded_container)
         .expect("Failed to write the combined file");
 }
 
@@ -134,8 +134,8 @@ pub fn read_combined_file(file_path: String) -> Vec<FileData> {
 pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
     let mut task_list = Vec::new();
 
-    for i in combined_data {
-        let filepath = i.path;
+    for file_data in combined_data {
+        let filepath = file_data.path;
 
         std::fs::create_dir_all(filepath.parent().unwrap())
             .expect("Failed to create all the required directories/subdirectories");
@@ -147,10 +147,10 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
         match keys {
             Some(keys) => {
                 // Check the signature
-                keys.verify(&i.data, i.signature);
+                keys.verify(&file_data.data, &file_data.signature);
 
                 // Decrypt the file
-                let decrypted_data = decrypt(i.data, keys.keypair.secret.as_bytes(), &keys.nonce)
+                let decrypted_data = decrypt(file_data.data, keys.keypair.secret.as_bytes(), &keys.nonce)
                     .expect("Failed to decrypt the data");
 
                 // Decompress the data
@@ -172,7 +172,7 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
             None => {
                 // Decompress the data
                 let decompressed_data =
-                    decompress(&i.data, None).expect("Failed to decompress the data.");
+                    decompress(&file_data.data, None).expect("Failed to decompress the data.");
 
                 let write_task = task::spawn(async move {
                     file_write

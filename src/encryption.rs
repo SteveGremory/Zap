@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
+    path::Path,
     result::Result,
 };
 
@@ -19,7 +19,7 @@ pub struct Keys {
 
 impl Keys {
     pub fn new() -> Self {
-        let mut csprng = OsRng {};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
 
         let nonce: String = rand::thread_rng()
@@ -30,12 +30,13 @@ impl Keys {
 
         Keys {
             keypair,
-            nonce: nonce.as_bytes().try_into().unwrap(),
             signature: vec![0],
+            // Safe to unwrap because it's all alphanumeric characters
+            nonce: nonce.as_bytes().try_into().unwrap(),
         }
     }
 
-    pub fn save_keypair(&self, filepath: PathBuf) {
+    pub fn save_keypair<P: AsRef<Path>>(&self, filepath: P) {
         // Encode the keypair with bincode and write it to disk.
         let encoded_keypair = bincode::serialize(&self).expect("Failed to serialise keyfile");
         let mut keyfile =
@@ -45,7 +46,9 @@ impl Keys {
             .expect("Failed to write the key to disk");
     }
 
-    pub fn from(mut filepath: PathBuf) -> Self {
+    pub fn from<P: AsRef<Path>>(filepath: P) -> Self {
+        let mut filepath = filepath.as_ref().to_owned();
+
         // Read the keypair, decode it with bincode and return a keypair object
         if !filepath.ends_with(".sfkp") {
             filepath.push(".sfkp");
@@ -59,10 +62,7 @@ impl Keys {
             .read_to_end(&mut keyfile_contents)
             .expect("Failed to read the keypair");
 
-        let decoded: Keys =
-            bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile");
-
-        decoded
+        bincode::deserialize(&keyfile_contents[..]).expect("Failed to deseralise the keyfile")
     }
 
     pub fn sign(&mut self, data: &[u8]) {
@@ -70,8 +70,8 @@ impl Keys {
         self.signature = bincode::serialize(&signature).unwrap();
     }
 
-    pub fn verify(&self, data: &[u8], signature: Vec<u8>) {
-        let decoded_signature: Signature = bincode::deserialize(&signature).unwrap();
+    pub fn verify(&self, data: &[u8], signature: &[u8]) {
+        let decoded_signature: Signature = bincode::deserialize(signature).unwrap();
         let verification = self.keypair.public.verify_strict(data, &decoded_signature);
 
         // TODO: Do this better
