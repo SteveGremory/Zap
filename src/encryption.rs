@@ -30,8 +30,9 @@ impl Keys {
 
         Keys {
             keypair,
-            nonce: nonce.as_bytes().try_into().unwrap(),
             signature: vec![0],
+            // Safe to unwrap because it's all alphanumeric characters
+            nonce: nonce.as_bytes().try_into().unwrap(),
         }
     }
 
