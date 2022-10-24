@@ -134,8 +134,8 @@ pub fn read_combined_file(file_path: String) -> Vec<FileData> {
 pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
     let mut task_list = Vec::new();
 
-    for i in combined_data {
-        let filepath = i.path;
+    for file_data in combined_data {
+        let filepath = file_data.path;
 
         std::fs::create_dir_all(filepath.parent().unwrap())
             .expect("Failed to create all the required directories/subdirectories");
@@ -147,10 +147,10 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
         match keys {
             Some(keys) => {
                 // Check the signature
-                keys.verify(&i.data, i.signature);
+                keys.verify(&file_data.data, &file_data.signature);
 
                 // Decrypt the file
-                let decrypted_data = decrypt(i.data, keys.keypair.secret.as_bytes(), &keys.nonce)
+                let decrypted_data = decrypt(file_data.data, keys.keypair.secret.as_bytes(), &keys.nonce)
                     .expect("Failed to decrypt the data");
 
                 // Decompress the data
@@ -172,7 +172,7 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
             None => {
                 // Decompress the data
                 let decompressed_data =
-                    decompress(&i.data, None).expect("Failed to decompress the data.");
+                    decompress(&file_data.data, None).expect("Failed to decompress the data.");
 
                 let write_task = task::spawn(async move {
                     file_write
