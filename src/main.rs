@@ -15,6 +15,7 @@ async fn main() {
     let mut output_path = String::new();
     let mut file_path = String::new();
     let mut encrypted = false;
+    
 
     {
         let mut ap = ArgumentParser::new();

@@ -1,5 +1,5 @@
 use crate::encryption::*;
-use lz4::block::{compress, decompress};
+use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -62,12 +62,7 @@ pub fn create_combined_file(folder_path: &String, file_path: &String, opt_keys: 
         // Compress + encrypt + sign the file
 
         // Compress the file data
-        let compressed_data = compress(
-            &file_data,
-            Some(lz4::block::CompressionMode::FAST(10)),
-            true,
-        )
-        .expect("Failed to compress the data");
+        let compressed_data = compress_prepend_size(&file_data);
 
         // Only encrypt the file if the keys are supplied
         match opt_keys {
@@ -108,6 +103,7 @@ pub fn create_combined_file(folder_path: &String, file_path: &String, opt_keys: 
     // Sign the data only if the keys are supplied.
     if let Some(keys) = opt_keys {
         keys.sign(&encoded_container);
+    } else {
     }
 
     // write it to disk.
@@ -165,8 +161,8 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
                         .expect("Failed to decrypt the data");
 
                 // Decompress the data
-                let decompressed_data =
-                    decompress(&decrypted_data, None).expect("Failed to decompress the data");
+                let decompressed_data = decompress_size_prepended(&decrypted_data)
+                    .expect("Failed to decompress the data.");
 
                 let write_task = task::spawn(async move {
                     file_write
@@ -182,8 +178,8 @@ pub async fn recreate_files(combined_data: Vec<FileData>, keys: Option<&Keys>) {
 
             None => {
                 // Decompress the data
-                let decompressed_data =
-                    decompress(&file_data.data, None).expect("Failed to decompress the data.");
+                let decompressed_data = decompress_size_prepended(&file_data.data)
+                    .expect("Failed to decompress the data.");
 
                 let write_task = task::spawn(async move {
                     file_write
