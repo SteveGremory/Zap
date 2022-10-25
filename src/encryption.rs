@@ -1,5 +1,5 @@
-use anyhow::anyhow;
 use chacha20poly1305::{aead::*, *};
+use color_eyre::eyre::{eyre, Report, Result};
 use ed25519_dalek::{Keypair, Signature, Signer};
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
 use serde::{Deserialize, Serialize};
@@ -7,14 +7,13 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
-    result::Result,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Keys {
     pub keypair: Keypair,
     pub signature: Vec<u8>,
-    pub nonce: [u8; 24],
+    pub nonce: [u8; 12],
 }
 
 impl Keys {
@@ -24,7 +23,7 @@ impl Keys {
 
         let nonce: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
-            .take(24)
+            .take(12)
             .map(char::from)
             .collect();
 
@@ -80,30 +79,61 @@ impl Keys {
     }
 }
 
-pub fn encrypt(
-    file_data: Vec<u8>,
-    key: &[u8; 32],
-    nonce: &[u8; 24],
-) -> Result<Vec<u8>, anyhow::Error> {
+pub fn encrypt(file_data: Vec<u8>, key: &[u8; 32], nonce: &[u8; 24]) -> Result<Vec<u8>, Report> {
     let cipher = XChaCha20Poly1305::new(key.into());
 
     let encrypted_file = cipher
         .encrypt(nonce.into(), file_data.as_ref())
-        .map_err(|err| anyhow!("Encrypting small file: {}", err))?;
+        .map_err(|err| eyre!("Encrypting small file: {}", err))?;
 
     Ok(encrypted_file)
 }
 
-pub fn decrypt(
-    file_data: Vec<u8>,
-    key: &[u8; 32],
-    nonce: &[u8; 24],
-) -> Result<Vec<u8>, anyhow::Error> {
+pub fn decrypt(file_data: Vec<u8>, key: &[u8; 32], nonce: &[u8; 24]) -> Result<Vec<u8>, Report> {
     let cipher = XChaCha20Poly1305::new(key.into());
 
     let decrypted_file = cipher
         .decrypt(nonce.into(), file_data.as_ref())
-        .map_err(|err| anyhow!("Decrypting small file: {}", err))?;
+        .map_err(|err| eyre!("Decrypting small file: {}", err))?;
 
     Ok(decrypted_file)
+}
+
+fn encrypt_large_file(
+    source_file_path: &str,
+    dist_file_path: &str,
+    key: &[u8; 32],
+    nonce: &[u8; 19],
+) -> Result<(), Error> {
+    let aead = XChaCha20Poly1305::new(key.as_ref().into());
+    let mut stream_encryptor = stream::EncryptorBE32::from_aead(aead, nonce.as_ref().into());
+
+    const BUFFER_LEN: usize = 500;
+    let mut buffer = [0u8; BUFFER_LEN];
+
+    let mut source_file = File::open(source_file_path).unwrap();
+    let mut dist_file = File::create(dist_file_path).unwrap();
+
+    loop {
+        let read_count = source_file.read(&mut buffer).unwrap();
+
+        if read_count == BUFFER_LEN {
+            let ciphertext = stream_encryptor
+                .encrypt_next(buffer.as_slice())
+                .map_err(|err| println!("Encrypting large file: {}", err))
+                .unwrap();
+
+            dist_file.write_all(&ciphertext).unwrap();
+        } else {
+            let ciphertext = stream_encryptor
+                .encrypt_last(&buffer[..read_count])
+                .map_err(|err| println!("Encrypting large file: {}", err))
+                .unwrap();
+
+            dist_file.write_all(&ciphertext).unwrap();
+            break;
+        }
+    }
+
+    Ok(())
 }

@@ -15,7 +15,6 @@ async fn main() {
     let mut output_path = String::new();
     let mut file_path = String::new();
     let mut encrypted = false;
-    
 
     {
         let mut ap = ArgumentParser::new();
@@ -50,7 +49,7 @@ async fn main() {
 
     // If a file with the same name exists, shred it.
     if Path::new(&output_path).exists() {
-        shred_file(&output_path);
+        reading::shred_file(&output_path);
     }
 
     // If a combined file is to be created, do so
@@ -71,15 +70,17 @@ async fn main() {
                 .expect("Failed to read from stdin");
 
             // Create a combined file from the folder with encryption
-            create_combined_file(&folder_path, &output_path, Some(&mut keypair));
+            reading::create_combined_file(&folder_path, &output_path, Some(&mut keypair));
 
             // write the keypair to disk
             keypair.save_keypair(format!("{}.sfkp", keypair_path.trim()));
         } else {
             // Create a combined file from the folder without encryption
-            create_combined_file(&folder_path, &output_path, None);
+            // TODO: Implement file streaming
+
+            reading::create_combined_file(&folder_path, &output_path, None);
         }
-    } else {
+    } else if encrypted {
         // Create a keypair from the provided keys
         let mut keys_path = String::new();
 
@@ -92,7 +93,11 @@ async fn main() {
         let keys = Keys::from(keys_path.trim());
 
         // Recreate the file structure that was combined
-        let combined_data = read_combined_file(file_path, Some(&keys));
-        recreate_files(combined_data, Some(&keys)).await;
+        let combined_data = reading::read_combined_file(file_path, Some(&keys));
+        reading::recreate_files(combined_data, Some(&keys)).await;
+    } else {
+        // Recreate the file structure that was combined
+        let combined_data = reading::read_combined_file(file_path, None);
+        reading::recreate_files(combined_data, None).await;
     }
 }
