@@ -4,7 +4,11 @@ use chacha20poly1305::{
     AeadInPlace, ChaCha20Poly1305, Nonce,
 };
 
-use std::{fs, io, path};
+use std::{
+    fs,
+    io::{self},
+    path,
+};
 use tokio::*;
 use walkdir::WalkDir;
 
@@ -36,7 +40,7 @@ fn copy_crypt<R: io::Read + ?Sized, W: io::Write + ?Sized>(
     mode: CryptMode,
 ) -> io::Result<usize> {
     const BUFFER_SIZE: usize = 4096;
-    let mut vec_buffer: Vec<u8> = vec![0; BUFFER_SIZE];
+    let mut vec_buffer: heapless::Vec<u8, BUFFER_SIZE> = heapless::Vec::new();
 
     let mut final_len = 0;
 
@@ -91,7 +95,7 @@ fn decompress(input_file: fs::File, output_file: fs::File, keys: Option<Keys>) {
 
 #[tokio::main]
 async fn main() {
-    let folder_path = "/Users/steve/Downloads/";
+    let folder_path = "/Users/steve/Downloads";
     let mut task_list = Vec::with_capacity(800);
     //let is_compressing = true;
 
@@ -127,7 +131,7 @@ async fn main() {
         // Shadow the prev. keys variable
         let keys = keys.clone();
         let compress_task = task::spawn(async move {
-            compress(input_file, output_file, Some(keys));
+            compress(input_file, output_file, None);
         });
 
         task_list.push(compress_task);
