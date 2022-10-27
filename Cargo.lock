@@ -235,6 +235,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_logger"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c90bf5f19754d10198ccb95b70664fc925bd1fc090a0fd9a6ebc54acc8cd6272"
+dependencies = [
+ "atty",
+ "humantime",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -292,6 +305,12 @@ checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "inout"
@@ -943,6 +962,18 @@ dependencies = [
  "lz4_flex",
  "serde",
  "tokio",
+ "walkdir",
+ "zapf",
+]
+
+[[package]]
+name = "zapf"
+version = "0.0.0"
+source = "git+https://github.com/Speykious/zapf?rev=a1843b474b5abd23a72645beb13ea81c98533072#a1843b474b5abd23a72645beb13ea81c98533072"
+dependencies = [
+ "clap",
+ "env_logger",
+ "log",
  "walkdir",
 ]
 

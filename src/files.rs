@@ -65,8 +65,9 @@ fn copy_crypt<R: Read + ?Sized, W: Write + ?Sized>(
         }
 
         final_len += len;
-        writer.write_all(&encrypted_buffer)?;
-        encrypted_buffer.clear();
+        writer.write(&encrypted_buffer);
+
+        vec_buffer.clear();
     }
 
     Ok(final_len)
@@ -104,13 +105,16 @@ pub async fn directorize(
     let mut task_list = Vec::with_capacity(800);
 
     if is_decompressing {
+        // TODO: Fix encryption
         // write the keys to disk
-        let mut keyfile = fs::File::open("keyfile.zk").expect("Could not open keyfile");
-        let mut data: Vec<u8> = Vec::new();
-        keyfile
-            .read_to_end(data.as_mut())
-            .expect("Failed to read keyfile");
-        let keys: Keys = bincode::deserialize(&data).expect("Failed to serialize");
+        /*
+            let mut keyfile = fs::File::open("keyfile.zk").expect("Could not open keyfile");
+            let mut data: Vec<u8> = Vec::new();
+            keyfile
+                .read_to_end(data.as_mut())
+                .expect("Failed to read keyfile");
+            let keys: Keys = bincode::deserialize(&data).expect("Failed to serialize");
+        */
 
         for entry in WalkDir::new(input_folder_path) {
             let entry = entry.unwrap();
@@ -127,7 +131,8 @@ pub async fn directorize(
             if entry_path.extension().unwrap_or_default() == "lz4" {
                 let parent_path = entry_path.strip_prefix(input_folder_path).unwrap();
 
-                let output_path = parent_path.with_extension("");
+                let output_path =
+                    path::Path::new(output_folder_path).join(parent_path.with_extension(""));
 
                 let current_dir = output_path.parent().unwrap();
 
@@ -135,26 +140,28 @@ pub async fn directorize(
                     .expect("Failed to create all the required directories/subdirectories");
 
                 // Shadow the prev. keys variable
-                let keys = keys.clone();
+                // let keys = keys.clone();
 
                 let decompress_task = tokio::spawn(async {
                     let input_file = fs::File::open(entry_path).unwrap();
                     let output_file =
                         fs::File::create(output_path).expect("Failed to create file.");
-                    decompress(input_file, output_file, Some(keys));
+                    decompress(input_file, output_file, None);
                 });
 
                 task_list.push(decompress_task);
             }
         }
     } else {
-        let keys = Keys::new();
-        // write the keys to disk
-        let mut keyfile = fs::File::create("keyfile.zk").expect("Could not open keyfile");
-        let serialized_keys = bincode::serialize(&keys).expect("Failed to serialize");
-        keyfile
-            .write_all(&serialized_keys)
-            .expect("Failed to write keys to disk");
+        /*
+                let keys = Keys::new();
+                // write the keys to disk
+                let mut keyfile = fs::File::create("keyfile.zk").expect("Could not open keyfile");
+                let serialized_keys = bincode::serialize(&keys).expect("Failed to serialize");
+                keyfile
+                    .write_all(&serialized_keys)
+                    .expect("Failed to write keys to disk");
+        */
 
         for entry in WalkDir::new(input_folder_path) {
             let entry = entry.unwrap();
@@ -185,12 +192,12 @@ pub async fn directorize(
                 .expect("Failed to create all the required directories/subdirectories");
 
             // Shadow the prev. keys variable
-            let keys = keys.clone();
+            //let keys = keys.clone();
 
             let compress_task = tokio::spawn(async {
                 let input_file = fs::File::open(entry_path).unwrap();
                 let output_file = fs::File::create(output_path).expect("Failed to create file.");
-                compress(input_file, output_file, Some(keys));
+                compress(input_file, output_file, None);
             });
 
             task_list.push(compress_task);

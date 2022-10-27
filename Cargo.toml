@@ -19,4 +19,4 @@ tokio = { version = "1.21.2", features = ["full"] }
 heapless = { version = "0.7.16" }
 generic-array = { version = "0.14", features = ["serde"] }
 clap = { version = "4.0.18", features = ["derive"] }
-
+zapf = { git = "https://github.com/Speykious/zapf", rev = "a1843b474b5abd23a72645beb13ea81c98533072" }
