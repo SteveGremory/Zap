@@ -1,5 +1,6 @@
+mod files;
+
 use clap::Parser;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -10,17 +11,18 @@ use std::path::PathBuf;
 )]
 struct Args {
     /// Input folder
-    input: PathBuf,
+    input: String,
+
     /// Output file
-    output: PathBuf,
+    output: String,
+
+    /// Whether to decompress the data
+    #[arg(short, long)]
+    decompress: bool,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    println!(
-        "Input folder: {}\nOutput file: {}",
-        args.input.display(),
-        args.output.display()
-    );
+    files::directorize(&args.input, &args.output, args.decompress).await;
 }
