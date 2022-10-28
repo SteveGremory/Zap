@@ -10,8 +10,7 @@ use zapf::unpack_files;
 #[command(
     author,
     version,
-    about,
-    long_about = "Zap: Decompress and/or decrypt a folder into a single file"
+    about = "Unzap is a simple program to decompress/decrypt a zapfile."
 )]
 
 struct Args {

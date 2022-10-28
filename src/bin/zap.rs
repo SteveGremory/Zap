@@ -10,8 +10,7 @@ use zapf::pack_files;
 #[command(
     author,
     version,
-    about,
-    long_about = "Zap: Compress and/or encrypt a folder into a single file"
+    about = "Zap is a simple program to compress/encrypt the a folder."
 )]
 struct Args {
     /// Input folder
