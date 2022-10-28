@@ -968,8 +968,8 @@ dependencies = [
 
 [[package]]
 name = "zapf"
-version = "0.0.0"
-source = "git+https://github.com/Speykious/zapf?rev=a1843b474b5abd23a72645beb13ea81c98533072#a1843b474b5abd23a72645beb13ea81c98533072"
+version = "0.1.0"
+source = "git+https://github.com/Speykious/zapf?rev=c11af6cb26cd87ee66c4bf5fba0da4c26fc680d7#c11af6cb26cd87ee66c4bf5fba0da4c26fc680d7"
 dependencies = [
  "clap",
  "env_logger",
