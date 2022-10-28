@@ -1,7 +1,10 @@
 mod compression;
-mod encryption;
 
-use std::{fs, io, path};
+use std::{
+    fs,
+    io::{self},
+    path,
+};
 
 use compression::{compress_lz4, decompress_lz4};
 use walkdir::WalkDir;
@@ -42,13 +45,10 @@ pub async fn compress_directory(
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
 
-        // Shadow the prev. keys variable
-        //let keys = keys.clone();
-
         let compress_task = tokio::spawn(async {
             let input_file = fs::File::open(entry_path).expect("Failed to open input file");
             let output_file = fs::File::create(output_path).expect("Failed to create file");
-            compress_lz4(input_file, output_file, None);
+            compress_lz4(input_file, output_file);
         });
 
         task_list.push(compress_task);
@@ -90,13 +90,10 @@ pub async fn decompress_directory(
             std::fs::create_dir_all(current_dir)
                 .expect("Failed to create all the required directories/subdirectories");
 
-            // Shadow the prev. keys variable
-            // let keys = keys.clone();
-
             let decompress_task = tokio::spawn(async {
                 let input_file = fs::File::open(entry_path).unwrap();
                 let output_file = fs::File::create(output_path).expect("Failed to create file.");
-                decompress_lz4(input_file, output_file, None);
+                decompress_lz4(input_file, output_file);
             });
 
             task_list.push(decompress_task);

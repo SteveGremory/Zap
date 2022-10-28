@@ -10,13 +10,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chacha20poly1305 = { version = "0.10.1", features = ["heapless", "alloc"] }
-serde = { version = "1.0", features = ["derive"] }
 lz4_flex = { version = "0.9.3", default-features = false, features=["frame"] }
-bincode = { version = "1.3.3" }
 walkdir = "2.3.2"
 tokio = { version = "1.21.2", features = ["full"] }
-heapless = { version = "0.7.16" }
-generic-array = { version = "0.14", features = ["serde"] }
 clap = { version = "4.0.18", features = ["derive"] }
-zapf = { git = "https://github.com/Speykious/zapf", rev = "c11af6cb26cd87ee66c4bf5fba0da4c26fc680d7" }
+zapf = { git = "https://github.com/Speykious/zapf", rev = "4608ab5db49be659a2018ad8826334bb78719b31" }

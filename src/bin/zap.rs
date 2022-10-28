@@ -27,6 +27,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
+
+    if args.encrypt {
+        todo!("Encryption has not been implemented yet.");
+    }
+
     zap::compress_directory(&args.input, "/tmp/stuff").await?;
 
     let out_file = File::create(&args.output).expect("Could not create file");

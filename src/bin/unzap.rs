@@ -22,12 +22,16 @@ struct Args {
 
     /// Whether to encrypt the data
     #[arg(short, long)]
-    encrypt: bool,
+    decrypt: bool,
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
+
+    if args.decrypt {
+        todo!("Decryption has not been implemented yet.");
+    }
 
     unpack_files(&args.input, "/tmp/unpacked")?;
     zap::decompress_directory("/tmp/unpacked", &args.output).await?;
