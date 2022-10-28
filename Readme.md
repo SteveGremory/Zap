@@ -1,6 +1,6 @@
 # Zap
 
-Fast compress and/or encrypt folders fast. Like, really fast.
+Compress and/or encrypt folders fast. Like, really fast.
 or as some say, **blazingly** fast.
 
 ## Installation
