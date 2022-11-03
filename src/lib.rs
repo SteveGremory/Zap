@@ -1,6 +1,6 @@
-mod compression;
-mod encryption;
-mod internal;
+pub mod compression;
+pub mod encryption;
+pub mod internal;
 
 use std::{
     fs,
@@ -8,50 +8,14 @@ use std::{
     path,
 };
 
-use compression::{compress_lz4, decompress_lz4};
+use compression::{decompress_lz4};
 use walkdir::WalkDir;
 use rpassword::prompt_password;
 
-fn compress_encrypt<T, U, V>(
-    input: T, 
-    output: U, 
-    comp: fn(U) -> Result<lz4_flex::frame::FrameEncoder<U>, io::Error>,
-    encr: fn(Result<lz4_flex::frame::FrameEncoder<U>, io::Error>,) -> Result<V, io::Error>
-) -> Result<(), io::Error>
-where T: io::Read, U: io::Write, V: io::Write
-{
-    io::copy(
-        &mut input,
-        &mut encr(comp(output))?
-    )?;
-    Ok(())
-}
-
-fn lz4_c<T>(output: T) -> Result<lz4_flex::frame::FrameEncoder<T>, io::Error>
-where T: io::Write
-{
-    Ok(lz4_flex::frame::FrameEncoder::new(output))
-}
-
-fn compress<T, U>(
-    input: T, 
-    output: U, 
-    comp: fn(U) -> Result<lz4_flex::frame::FrameEncoder<U>, io::Error>
-) -> Result<(), io::Error>
-where T: io::Read, U: io::Write
-{
-    io::copy(
-        &mut input,
-        &mut comp(output)?
-    )?;
-    Ok(())
-}
-
-pub async fn compress_directory<T, U>(
+pub async fn compress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
-    compression_algorithm: fn(fs::File) -> Result<lz4_flex::frame::FrameEncoder<fs::File>, io::Error>,
-    encryption_algorithm: Option<fn(T) -> Result<U, io::Error>>,
+    compression_algorithm: fn(Result<fs::File, io::Error>) -> Result<lz4_flex::frame::FrameEncoder<fs::File>, io::Error>
 ) -> io::Result<()> 
 {
     let mut task_list = Vec::with_capacity(800);
@@ -89,11 +53,13 @@ pub async fn compress_directory<T, U>(
         let func = compression_algorithm.clone();
         // Rewrite to return errors
         let compress_task = tokio::spawn(async move {
-            compress(
+            dbg!(internal::compress(
                 fs::File::open(entry_path).expect("Failed to open input file"),
-                fs::File::create(output_path).expect("Failed to create file"),
-                func,
-            ); 
+                internal::process_unit(
+                    fs::File::create(output_path),
+                    func
+                )
+            ));
         });
 
         task_list.push(compress_task);

@@ -63,9 +63,18 @@ impl Command {
 
     async fn archive(input: String, output: String, encrypt: Option<EncryptionType>, keypath: Option<String>) -> io::Result<()> {
         
-        zap::compress_directory(&input, "/tmp/stuff").await?;
+        zap::compress_directory(
+            &input, 
+            "/tmp/stuff",
+            zap::compression::lz4_writer
+        ).await?;
 
-        match encrypt {
+        let out_file = File::create(&output).expect("Could not create file");
+
+        let mut out_writer = BufWriter::new(out_file);
+
+        pack_files("/tmp/stuff", &mut out_writer)?;
+        /*match encrypt {
             Some(encryption_method) => {
                 let out_file = File::create(format!("{}.tmp", &output))
                     .expect("Could not create file");
@@ -92,7 +101,7 @@ impl Command {
 
                 pack_files("/tmp/stuff", &mut out_writer)?;
             }
-        }
+        }*/
 
         fs::remove_dir_all("/tmp/stuff")
     }
