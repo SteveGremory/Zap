@@ -1,5 +1,6 @@
 mod compression;
 mod encryption;
+mod internal;
 
 use std::{
     fs,
@@ -11,36 +12,48 @@ use compression::{compress_lz4, decompress_lz4};
 use walkdir::WalkDir;
 use rpassword::prompt_password;
 
-
-//Compression algo takes encryption writer or file writer
-
-struct CompressionCandidate<U>
-where T: io::Write, U: io::Write
+fn compress_encrypt<T, U, V>(
+    input: T, 
+    output: U, 
+    comp: fn(U) -> Result<lz4_flex::frame::FrameEncoder<U>, io::Error>,
+    encr: fn(Result<lz4_flex::frame::FrameEncoder<U>, io::Error>,) -> Result<V, io::Error>
+) -> Result<(), io::Error>
+where T: io::Read, U: io::Write, V: io::Write
 {
-    input: U,
-    output: U,
-    pub compression: fn(U) -> Result<U, io::Error>,
-    pub encryption: Option<fn(U) -> Result<U, io::Error>>,
-}
-
-fn compress<T, U>(c: CompressionCandidate<U>) -> Result<(), io::Error>
-where T: io::Write, U: io::Write
-{
-    let m = match c.encryption {
-        Some(func) => (func, c.output),
-        None => c.output
-    };
-    let n = (c.compression, m);
-
-    io::copy(&mut c.output, &mut n).expect("I/O operation failed");
-
+    io::copy(
+        &mut input,
+        &mut encr(comp(output))?
+    )?;
     Ok(())
 }
 
-pub async fn compress_directory(
+fn lz4_c<T>(output: T) -> Result<lz4_flex::frame::FrameEncoder<T>, io::Error>
+where T: io::Write
+{
+    Ok(lz4_flex::frame::FrameEncoder::new(output))
+}
+
+fn compress<T, U>(
+    input: T, 
+    output: U, 
+    comp: fn(U) -> Result<lz4_flex::frame::FrameEncoder<U>, io::Error>
+) -> Result<(), io::Error>
+where T: io::Read, U: io::Write
+{
+    io::copy(
+        &mut input,
+        &mut comp(output)?
+    )?;
+    Ok(())
+}
+
+pub async fn compress_directory<T, U>(
     input_folder_path: &str,
     output_folder_path: &str,
-) -> io::Result<()> {
+    compression_algorithm: fn(fs::File) -> Result<lz4_flex::frame::FrameEncoder<fs::File>, io::Error>,
+    encryption_algorithm: Option<fn(T) -> Result<U, io::Error>>,
+) -> io::Result<()> 
+{
     let mut task_list = Vec::with_capacity(800);
 
     for entry in WalkDir::new(input_folder_path) {
@@ -73,10 +86,14 @@ pub async fn compress_directory(
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
 
-        let compress_task = tokio::spawn(async {
-            let input_file = fs::File::open(entry_path).expect("Failed to open input file");
-            let output_file = fs::File::create(output_path).expect("Failed to create file");
-            compress_lz4(input_file, output_file);
+        let func = compression_algorithm.clone();
+        // Rewrite to return errors
+        let compress_task = tokio::spawn(async move {
+            compress(
+                fs::File::open(entry_path).expect("Failed to open input file"),
+                fs::File::create(output_path).expect("Failed to create file"),
+                func,
+            ); 
         });
 
         task_list.push(compress_task);
