@@ -1,4 +1,5 @@
 mod compression;
+mod encryption;
 
 use std::{
     fs,
@@ -8,6 +9,33 @@ use std::{
 
 use compression::{compress_lz4, decompress_lz4};
 use walkdir::WalkDir;
+use rpassword::prompt_password;
+
+
+//Compression algo takes encryption writer or file writer
+
+struct CompressionCandidate<U>
+where T: io::Write, U: io::Write
+{
+    input: U,
+    output: U,
+    pub compression: fn(U) -> Result<U, io::Error>,
+    pub encryption: Option<fn(U) -> Result<U, io::Error>>,
+}
+
+fn compress<T, U>(c: CompressionCandidate<U>) -> Result<(), io::Error>
+where T: io::Write, U: io::Write
+{
+    let m = match c.encryption {
+        Some(func) => (func, c.output),
+        None => c.output
+    };
+    let n = (c.compression, m);
+
+    io::copy(&mut c.output, &mut n).expect("I/O operation failed");
+
+    Ok(())
+}
 
 pub async fn compress_directory(
     input_folder_path: &str,
@@ -105,4 +133,34 @@ pub async fn decompress_directory(
     }
 
     Ok(())
+}
+
+pub fn encrypt_directory_pw(intput_file: &str) -> Result<String, std::io::Error>
+{
+    let password = prompt_password("Enter a password for encryption: ")?;
+    let repeated_password = prompt_password("Repeat encryption password: ")?;
+
+    if password != repeated_password { 
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData, "Passwords do not match.")) 
+    };
+
+    
+
+    Ok(String::new())
+}
+
+pub fn decrypt_directory_pw() -> Result<String, std::io::Error>
+{
+    Ok(String::new())
+}
+
+pub fn encrypt_directory_key() -> Result<String, std::io::Error>
+{
+    Ok(String::new())
+}
+
+pub fn decrypt_directory_key() -> Result<String, std::io::Error>
+{
+    Ok(String::new())
 }

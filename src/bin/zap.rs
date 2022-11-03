@@ -3,7 +3,7 @@ use std::{
     io::{self, BufWriter},
 };
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use zapf::{pack_files, unpack_files};
 
 #[derive(Debug, Parser)]
@@ -27,7 +27,8 @@ enum Command {
 
         /// Whether to encrypt the data
         #[arg(short, long)]
-        encrypt: bool,
+        encrypt: Option<EncryptionType>,
+        keypath: Option<String>
     },
     Extract {
         /// Input file
@@ -37,8 +38,9 @@ enum Command {
         output: String,
 
         /// Whether to encrypt the data
+        /// String is either
         #[arg(short, long)]
-        decrypt: bool,
+        keypath: Option<String>,
     },
 }
 
@@ -49,40 +51,69 @@ impl Command {
                 input,
                 output,
                 encrypt,
-            } => Self::archive(input, output, encrypt).await,
+                keypath,
+            } => Self::archive(input, output, encrypt, keypath).await,
             Command::Extract {
                 input,
                 output,
-                decrypt,
-            } => Self::extract(input, output, decrypt).await,
+                keypath,
+            } => Self::extract(input, output, keypath).await,
         }
     }
 
-    async fn archive(input: String, output: String, encrypt: bool) -> io::Result<()> {
-        if encrypt {
-            todo!("Encryption has not been implemented yet.");
-        }
-
+    async fn archive(input: String, output: String, encrypt: Option<EncryptionType>, keypath: Option<String>) -> io::Result<()> {
+        
         zap::compress_directory(&input, "/tmp/stuff").await?;
 
-        let out_file = File::create(&output).expect("Could not create file");
-        let mut out_writer = BufWriter::new(out_file);
+        match encrypt {
+            Some(encryption_method) => {
+                let out_file = File::create(format!("{}.tmp", &output))
+                    .expect("Could not create file");
 
-        pack_files("/tmp/stuff", &mut out_writer)?;
+                let mut out_writer = BufWriter::new(out_file);
+
+                pack_files("/tmp/stuff", &mut out_writer)?;
+
+                match encryption_method {
+                    Password => {
+                        zap::encrypt_directory_pw(&output)?;
+                        // remove packed file
+                    },
+                    Key => {
+                        zap::encrypt_directory_key()?;
+                    }
+                }
+            },
+            None => {
+                let out_file = File::create(&output)
+                    .expect("Could not create file");
+
+                let mut out_writer = BufWriter::new(out_file);
+
+                pack_files("/tmp/stuff", &mut out_writer)?;
+            }
+        }
 
         fs::remove_dir_all("/tmp/stuff")
     }
 
-    async fn extract(input: String, output: String, decrypt: bool) -> io::Result<()> {
-        if decrypt {
-            todo!("Decryption has not been implemented yet.");
-        }
+    async fn extract(input: String, output: String, decrypt: Option<String>) -> io::Result<()> {
+        //dbg!(decrypt)
+        //if decrypt {
+          //  todo!("Decryption has not been implemented yet.");
+        //}
 
         unpack_files(&input, "/tmp/unpacked")?;
         zap::decompress_directory("/tmp/unpacked", &output).await?;
 
         fs::remove_dir_all("/tmp/unpacked")
     }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum EncryptionType {
+    Password,
+    Key
 }
 
 #[tokio::main]
