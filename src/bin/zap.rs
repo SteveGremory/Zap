@@ -5,7 +5,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use zapf::{pack_files, unpack_files};
-use zap::compression::algorithms::lz4_encoder;
+use zap::compression::algorithms::{lz4_encoder, lz4_decoder};
 #[derive(Debug, Parser)]
 #[command(
     author,
@@ -113,7 +113,11 @@ impl Command {
         //}
 
         unpack_files(&input, "/tmp/unpacked")?;
-        zap::decompress_directory("/tmp/unpacked", &output).await?;
+        zap::decompress_directory(
+            "/tmp/unpacked", 
+            &output,
+            lz4_decoder
+        ).await?;
 
         fs::remove_dir_all("/tmp/unpacked")
     }

@@ -1,38 +1,43 @@
 pub mod algorithms;
 
+// External
 use std::{
-    fs::{self, File},
-    io::{self},
+    io::{
+        Error,
+        Read,
+        Write,
+        copy
+    }
 };
-use std::io::Write;
 
 
 pub trait Cleanup<T>
 {
-    fn cleanup(self) ->  Result<T, io::Error>;
+    fn cleanup(self) ->  Result<T, Error>;
 }
 
-pub fn lz4<T>(input: Result<T, io::Error>) -> Result<lz4_flex::frame::FrameEncoder<T>, io::Error>
-where T: io::Write
+pub fn compress<T, U, V>(mut input: T, output: Result<U, Error>) -> Result<(), Error>
+where 
+T: Read,
+U: Write+Cleanup<V>,
+V: Write
 {
-    Ok(lz4_flex::frame::FrameEncoder::new(input?))
-}
-/// Compress the input file and write it to the output file.
-/// The output file is encrypted if the keys are supplied.
-pub fn compress_lz4(input_file: fs::File, output_file: fs::File) {
-    let mut wtr = lz4_flex::frame::FrameEncoder::new(output_file.try_clone().unwrap());
-    let mut rdr = input_file;
-
-    io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
-
-    wtr.finish().unwrap();
+    let mut out = output?;
+    let len = copy(&mut input, &mut out)?;
+    dbg!(len);
+    out.cleanup();
+    Ok(())
 }
 
-/// Decompress the input file and write it to the output file.
-/// The output file is encrypted if the keys are supplied.
-pub fn decompress_lz4(input_file: fs::File, output_file: fs::File) {
-    let mut rdr = lz4_flex::frame::FrameDecoder::new(input_file);
-    let mut wtr = output_file;
-
-    io::copy(&mut rdr, &mut wtr).expect("I/O operation failed");
+pub fn decompress<T, U, V>(mut input: Result<T, Error>, mut output: U) -> Result<(), Error>
+where 
+T: Read+Cleanup<V>,
+U: Write,
+V: Read
+{
+    let mut inp = input?;
+    let len = copy(&mut inp, &mut output)?;
+    dbg!(len);
+    inp.cleanup();
+    Ok(())
 }

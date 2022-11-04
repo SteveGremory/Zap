@@ -1,37 +1,28 @@
 
 use std::io::{
     Write,
-    Read,
     Error,
-    copy,
     ErrorKind
 };
-use openssl::symm::{
-    Cipher,
-    encrypt
-};
 
-use crate::compression::Cleanup;
-
-pub fn compress<T, U, V>(mut input: T, output: Result<U, Error>) -> Result<(), Error>
-where 
-T: Read,
-U: Write+Cleanup<V>,
-V: Write
+pub fn return_if_equal<T>(a: T, b: T) -> Result<T, Error>
+where T: Eq
 {
-    let mut out = output?;
-    let len = copy(&mut input, &mut out)?;
-    dbg!(len);
-    out.cleanup();
-    Ok(())
+    match a == b {
+        true => Ok(a),
+        false => Err(
+            Error::new(
+                ErrorKind::InvalidData, 
+                "Passwords do not match."
+            )
+        ) 
+    }
 }
 
 pub fn process_unit<T, U>(
     input: Result<T, Error>, 
     func: fn(Result<T, Error>) -> Result<U, Error>
-) -> Result<U, Error> where 
-T: Write,
-U: Write 
+) -> Result<U, Error>
 {
     func(input)
 }
@@ -45,6 +36,7 @@ T: Write,
 U: Write,
 V: Write
 {
+    
     f2(f1(input))
 }
 
@@ -58,32 +50,17 @@ T: Write
     func(input)
 }
 
-struct EncryptionPassthrough<'a, T>
-where T: Write
-{
-    cipher: Cipher,
-    key: &'a [u8],
-    iv: &'a [u8],
-    writer: T
-}
+/*
+Experimenting with some sort of functor to simplify optional processing
 
-impl<T: Write> EncryptionPassthrough<'_, T> 
-where T: Write
+pub fn exp_process_bind<T: Write, U: Write>(
+    input: Result<impl Write, Error>, 
+    mut f: Vec<fn(Result<T, Error>) -> Result<U, Error>>, 
+) -> Result<impl Write, Error> where
 {
-
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match encrypt(
-            self.cipher, 
-            self.key, 
-            Some(self.iv), 
-            buf) {
-            Ok(v) => self.writer.write(&v),
-            Err(e) => return Err(
-                Error::new(
-                    ErrorKind::Interrupted, 
-                    "Encryption faied."
-                )
-            )
-        }
+    match f.pop() {
+        Some(func) => exp_process_bind(func(input), f),
+        None => input
     }
 }
+*/

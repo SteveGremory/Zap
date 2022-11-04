@@ -6,27 +6,28 @@ use std::io::{
     Error,
     ErrorKind,
     Write,
+    Read
 };
 use lz4_flex::frame::{
     FrameEncoder,
     FrameDecoder
 };
 
-pub fn lz4_encoder<T>(input: Result<T, std::io::Error>) -> Result<Lz4_Encoder<T>, std::io::Error>
+pub fn lz4_encoder<T>(input: Result<T, std::io::Error>) -> Result<Lz4Encoder<T>, std::io::Error>
 where T: Write
 {
-    Ok( Lz4_Encoder { 
+    Ok( Lz4Encoder { 
         inner: (FrameEncoder::new(input?)) 
     })
 }
 
-pub struct Lz4_Encoder<T>
+pub struct Lz4Encoder<T>
 where T: Write
 {
     inner: FrameEncoder<T>
 }
 
-impl<T> Write for Lz4_Encoder<T>
+impl<T> Write for Lz4Encoder<T>
 where T: Write
 {
     fn flush(&mut self) -> std::io::Result<()> {
@@ -38,7 +39,7 @@ where T: Write
     }
 }
 
-impl<T> Cleanup<T> for Lz4_Encoder<T>
+impl<T> Cleanup<T> for Lz4Encoder<T>
 where T: Write
 {
     fn cleanup(self) -> Result<T, Error>
@@ -50,5 +51,36 @@ where T: Write
                 ErrorKind::Interrupted
             ))
         }
+    }
+}
+
+pub fn lz4_decoder<T>(input: Result<T, std::io::Error>) -> Result<Lz4Decoder<T>, std::io::Error>
+where T: Read
+{
+    Ok( Lz4Decoder { 
+        inner: (FrameDecoder::new(input?)) 
+    })
+}
+
+pub struct Lz4Decoder<T>
+where T: Read
+{
+    inner: FrameDecoder<T>
+}
+
+impl<T> Read for Lz4Decoder<T>
+where T: Read
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<T> Cleanup<T> for Lz4Decoder<T>
+where T: Read
+{
+    fn cleanup(self) -> Result<T, Error>
+    {
+        Ok(self.inner.into_inner())
     }
 }

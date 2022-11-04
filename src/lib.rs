@@ -3,14 +3,14 @@ pub mod encryption;
 pub mod internal;
 
 use std::{
-    fs,
+    fs::{self, File},
     io::{self},
     path,
 };
 
-use compression::{decompress_lz4, Cleanup};
+use compression::{Cleanup, compress, decompress};
+use internal::{process_unit};
 use walkdir::WalkDir;
-use rpassword::prompt_password;
 
 pub async fn compress_directory<T: 'static>(
     input_folder_path: &str,
@@ -54,7 +54,12 @@ where T: io::Write+Cleanup<fs::File>
         let func = compression_algorithm.clone();
         // Rewrite to return errors
         let compress_task = tokio::spawn(async move {
-            internal::compress(
+            /*internal::exp_process_bind(
+                fs::File::create(output_path),
+                vec!(func)
+            );*/
+
+            compress(
                 fs::File::open(entry_path).expect("Failed to open input file"),
                 internal::process_unit(
                     fs::File::create(output_path),
@@ -73,10 +78,12 @@ where T: io::Write+Cleanup<fs::File>
     Ok(())
 }
 
-pub async fn decompress_directory(
+pub async fn decompress_directory<T: 'static>(
     input_folder_path: &str,
     output_folder_path: &str,
-) -> io::Result<()> {
+    decompression_algorithm: fn(Result<File, io::Error>) -> Result<T, io::Error>
+) -> io::Result<()> where T: io::Read+Cleanup<fs::File>
+{
     let mut task_list = Vec::with_capacity(800);
 
     for entry in WalkDir::new(input_folder_path) {
@@ -102,10 +109,16 @@ pub async fn decompress_directory(
             std::fs::create_dir_all(current_dir)
                 .expect("Failed to create all the required directories/subdirectories");
 
-            let decompress_task = tokio::spawn(async {
-                let input_file = fs::File::open(entry_path).unwrap();
-                let output_file = fs::File::create(output_path).expect("Failed to create file.");
-                decompress_lz4(input_file, output_file);
+            let func = decompression_algorithm.clone();
+
+            let decompress_task = tokio::spawn(async move {
+                decompress(
+                    process_unit(
+                        fs::File::open(entry_path),
+                        func
+                    ), 
+                    fs::File::create(output_path).expect("Failed to create file.")
+                );
             });
 
             task_list.push(decompress_task);
@@ -117,34 +130,4 @@ pub async fn decompress_directory(
     }
 
     Ok(())
-}
-
-pub fn encrypt_directory_pw(intput_file: &str) -> Result<String, std::io::Error>
-{
-    let password = prompt_password("Enter a password for encryption: ")?;
-    let repeated_password = prompt_password("Repeat encryption password: ")?;
-
-    if password != repeated_password { 
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData, "Passwords do not match.")) 
-    };
-
-    
-
-    Ok(String::new())
-}
-
-pub fn decrypt_directory_pw() -> Result<String, std::io::Error>
-{
-    Ok(String::new())
-}
-
-pub fn encrypt_directory_key() -> Result<String, std::io::Error>
-{
-    Ok(String::new())
-}
-
-pub fn decrypt_directory_key() -> Result<String, std::io::Error>
-{
-    Ok(String::new())
 }
