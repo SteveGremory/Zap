@@ -1,3 +1,5 @@
+use crate::compression::Cleanup;
+
 //Internal
 use super::Encryptor;
 
@@ -27,4 +29,43 @@ pub fn aes256<T>(
             writer: writer?
         }
     )
+}
+
+pub fn encryption_passthrough<T>(input: Result<T, Error>) -> Result<EncryptionPassthrough<T>, Error>
+where T: Write+Cleanup<T>
+{
+    match input {
+        Err(e) => Err(e),
+        Ok(input) => Ok(
+            EncryptionPassthrough{
+                inner: input
+            }
+        )
+    }
+}
+
+pub struct EncryptionPassthrough<T>
+where T: Write+Cleanup<T>
+{
+    inner: T
+}
+
+impl<T> Write for EncryptionPassthrough<T>
+where T: Write+Cleanup<T>
+{
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.write(buf)
+    }
+}
+
+impl<T> Cleanup<T> for EncryptionPassthrough<T>
+where T: Cleanup<T>+Write
+{
+    fn cleanup(self) ->  Result<T, Error> {
+        self.inner.cleanup()
+    }
 }

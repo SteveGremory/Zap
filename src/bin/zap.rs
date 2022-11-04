@@ -5,7 +5,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use zapf::{pack_files, unpack_files};
-use zap::compression::algorithms::{lz4_encoder, lz4_decoder};
+use zap::{compression::algorithms::{lz4_encoder, lz4_decoder}, internal::build_writer, encryption::algorithm::{encryption_passthrough, aes256}, signing::signers::signer_passthrough};
 #[derive(Debug, Parser)]
 #[command(
     author,
@@ -66,7 +66,9 @@ impl Command {
         zap::compress_directory(
             &input, 
             "/tmp/stuff",
-            lz4_encoder
+            lz4_encoder,
+            None,
+            None
         ).await?;
 
         let out_file = File::create(&output).expect("Could not create file");

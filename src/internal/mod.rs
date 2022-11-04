@@ -5,6 +5,17 @@ use std::io::{
     ErrorKind
 };
 
+use openssl::encrypt;
+
+pub fn build_writer<T, U, V, W>(
+    compressor: fn(Result<T, Error>) -> Result<U, Error>,
+    encryptor: fn(Result<U, Error>) -> Result<V, Error>,
+    signer: fn(Result<V, Error>) -> Result<W, Error>,
+) -> impl Fn(Result<T, Error>) -> Result<W, Error>
+{
+    move | x | signer(encryptor(compressor(x)))
+}
+
 pub fn return_if_equal<T>(a: T, b: T) -> Result<T, Error>
 where T: Eq
 {
@@ -27,18 +38,15 @@ pub fn process_unit<T, U>(
     func(input)
 }
 
-fn process_bind<T, U, V>(
-    input: Result<T, Error>, 
+pub fn bind<T, U, V>(
     f1: fn(Result<T, Error>) -> Result<U, Error>, 
-    f2: fn(Result<U, Error>) -> Result<V, Error>
-) -> Result<V, Error> where
-T: Write,
-U: Write,
-V: Write
+    f2: fn(Result<U, Error>) -> Result<V, Error>,
+) -> impl Fn(Result<T, Error>) -> Result<V, Error>
 {
     
-    f2(f1(input))
+    move |x| f2(f1(x))
 }
+
 
 fn process_sign<T, U>(
     input: Result<T, Error>, 
@@ -51,16 +59,14 @@ T: Write
 }
 
 /*
-Experimenting with some sort of functor to simplify optional processing
-
-pub fn exp_process_bind<T: Write, U: Write>(
-    input: Result<impl Write, Error>, 
+Experimental infinite bind
+pub fn experimental_bind<T: Write, U: Write>(
+    x: Result<T, Error>,
     mut f: Vec<fn(Result<T, Error>) -> Result<U, Error>>, 
-) -> Result<impl Write, Error> where
+) -> impl Fn(Result<T, Error>) -> Result<U, Error>
 {
     match f.pop() {
-        Some(func) => exp_process_bind(func(input), f),
-        None => input
+        Some(func) => move | x | func(experimental_bind(f, x)),
+        None => x
     }
-}
-*/
+} */

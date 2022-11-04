@@ -1,6 +1,7 @@
 pub mod compression;
 pub mod encryption;
 pub mod internal;
+pub mod signing;
 
 use std::{
     fs::{self, File},
@@ -9,16 +10,27 @@ use std::{
 };
 
 use compression::{Cleanup, compress, decompress};
-use internal::{process_unit};
+use encryption::algorithm::encryption_passthrough;
+use internal::{process_unit, bind, build_writer};
+use signing::signers::signer_passthrough;
 use walkdir::WalkDir;
 
-pub async fn compress_directory<T: 'static>(
+pub async fn compress_directory<T: 'static+Cleanup<T>>(
     input_folder_path: &str,
     output_folder_path: &str,
-    compression_algorithm: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>
+    writer_algorithm: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>,
+    enc: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>,
+    sig: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>
 ) -> io::Result<()> 
 where T: io::Write+Cleanup<fs::File>
 {
+
+    let writer = build_writer(
+        writer_algorithm, 
+        encryption_passthrough,
+        signer_passthrough
+    );
+
     let mut task_list = Vec::with_capacity(800);
 
     for entry in WalkDir::new(input_folder_path) {
@@ -51,20 +63,12 @@ where T: io::Write+Cleanup<fs::File>
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
 
-        let func = compression_algorithm.clone();
+        let func = writer_algorithm.clone();
         // Rewrite to return errors
         let compress_task = tokio::spawn(async move {
-            /*internal::exp_process_bind(
-                fs::File::create(output_path),
-                vec!(func)
-            );*/
-
             compress(
                 fs::File::open(entry_path).expect("Failed to open input file"),
-                internal::process_unit(
-                    fs::File::create(output_path),
-                    func
-                )
+                writer(fs::File::create(output_path))
             );
         });
 
