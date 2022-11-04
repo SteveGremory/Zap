@@ -8,15 +8,16 @@ use std::{
     path,
 };
 
-use compression::{decompress_lz4};
+use compression::{decompress_lz4, Cleanup};
 use walkdir::WalkDir;
 use rpassword::prompt_password;
 
-pub async fn compress_directory(
+pub async fn compress_directory<T: 'static>(
     input_folder_path: &str,
     output_folder_path: &str,
-    compression_algorithm: fn(Result<fs::File, io::Error>) -> Result<lz4_flex::frame::FrameEncoder<fs::File>, io::Error>
+    compression_algorithm: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>
 ) -> io::Result<()> 
+where T: io::Write+Cleanup<fs::File>
 {
     let mut task_list = Vec::with_capacity(800);
 
@@ -53,13 +54,13 @@ pub async fn compress_directory(
         let func = compression_algorithm.clone();
         // Rewrite to return errors
         let compress_task = tokio::spawn(async move {
-            dbg!(internal::compress(
+            internal::compress(
                 fs::File::open(entry_path).expect("Failed to open input file"),
                 internal::process_unit(
                     fs::File::create(output_path),
                     func
                 )
-            ));
+            );
         });
 
         task_list.push(compress_task);

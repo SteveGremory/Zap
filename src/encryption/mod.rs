@@ -8,7 +8,3 @@ use openssl::{
 
 };
 
-pub fn encrypt(input: String)
-{
-
-}

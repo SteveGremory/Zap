@@ -1,17 +1,22 @@
+pub mod algorithms;
+
 use std::{
-    fs,
+    fs::{self, File},
     io::{self},
 };
+use std::io::Write;
 
-pub fn lz4_writer<T>(
-    input: Result<T, io::Error>
-) -> Result<lz4_flex::frame::FrameEncoder<T>, io::Error>
-where
-T: io::Write
+
+pub trait Cleanup<T>
+{
+    fn cleanup(self) ->  Result<T, io::Error>;
+}
+
+pub fn lz4<T>(input: Result<T, io::Error>) -> Result<lz4_flex::frame::FrameEncoder<T>, io::Error>
+where T: io::Write
 {
     Ok(lz4_flex::frame::FrameEncoder::new(input?))
 }
-
 /// Compress the input file and write it to the output file.
 /// The output file is encrypted if the keys are supplied.
 pub fn compress_lz4(input_file: fs::File, output_file: fs::File) {

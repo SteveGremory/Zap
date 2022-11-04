@@ -10,17 +10,19 @@ use openssl::symm::{
     Cipher,
     encrypt
 };
-use std::fmt::Debug;
 
-pub fn compress<T, U>(mut input: T, mut output: Result<U, Error>) -> Result<(), Error>
+use crate::compression::Cleanup;
+
+pub fn compress<T, U, V>(mut input: T, output: Result<U, Error>) -> Result<(), Error>
 where 
 T: Read,
-U: Write+Debug
+U: Write+Cleanup<V>,
+V: Write
 {
     let mut out = output?;
     let len = copy(&mut input, &mut out)?;
     dbg!(len);
-    out.flush().unwrap();
+    out.cleanup();
     Ok(())
 }
 
