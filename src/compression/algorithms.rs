@@ -35,7 +35,8 @@ where T: Write
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.inner.write(buf)
+        let len = self.inner.write(buf)?;
+        Ok(len)
     }
 }
 
@@ -44,7 +45,6 @@ where T: Write+Cleanup<U>
 {
     fn cleanup(self) -> Result<U, Error>
     {
-        dbg!("her");
         match self.inner.finish()
         {
             Ok(w) => w.cleanup(),
@@ -80,11 +80,13 @@ where T: Read
     }
 }
 
-impl<T> Cleanup<T> for Lz4Decoder<T>
-where T: Read
+impl<T, U> Cleanup<U> for Lz4Decoder<T>
+where T: Read+Cleanup<U>
 {
-    fn cleanup(self) -> Result<T, Error>
+    fn cleanup(self) -> Result<U, Error>
     {
-        Ok(self.inner.into_inner())
+        self.inner.into_inner().cleanup()
     }
 }
+
+

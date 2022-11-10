@@ -1,6 +1,6 @@
 pub mod algorithms;
 
-use crate::signing::Signer;
+use crate::signing::{Signer, Verifier};
 
 // External
 use std::{
@@ -26,19 +26,20 @@ V: Write
     let mut out = output?;
     
     let len = copy(&mut input, &mut out)?;
-    dbg!(len);
+    //dbg!(len);
     out.cleanup()
 }
 
-pub fn decompress<T, U, V>(input: Result<T, Error>, mut output: U) -> Result<(), Error>
+pub fn decompress<T, U, V>(input: Result<T, Error>, mut output: U) -> Result<bool, Error>
 where 
-T: Read+Cleanup<V>,
+T: Read+Verifier<V>,
 U: Write,
 V: Read
 {
     let mut inp = input?;
+    
     let len = copy(&mut inp, &mut output)?;
-    dbg!(len);
+    
     inp.cleanup();
-    Ok(())
+    Ok(true)
 }

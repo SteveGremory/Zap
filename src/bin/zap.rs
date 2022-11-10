@@ -102,6 +102,7 @@ impl Command {
         }*/
 
         fs::remove_dir_all("/tmp/stuff")
+        
     }
 
     async fn extract(input: String, output: String, _decrypt: Option<String>) -> io::Result<()> {
@@ -114,10 +115,10 @@ impl Command {
         zap::decompress_directory(
             "/tmp/unpacked", 
             &output,
-            lz4_decoder
         ).await?;
 
-        fs::remove_dir_all("/tmp/unpacked")
+        //fs::remove_dir_all("/tmp/unpacked")
+        Ok(())
     }
 }
 

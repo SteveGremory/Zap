@@ -5,15 +5,15 @@ pub mod signing;
 
 use std::{
     fs::{self, File},
-    io::{self},
+    io::{self, Read},
     path,
 };
 
-use compression::{Cleanup, compress, decompress};
-use encryption::{algorithm::{aes256}, convert_pw_to_key, Encryptor};
-use crate::compression::algorithms::Lz4Encoder;
+use compression::{Cleanup, compress, decompress, algorithms::lz4_decoder};
+use encryption::{algorithm::{aes256, aes256_r}, convert_pw_to_key, Encryptor};
+use crate::{compression::algorithms::Lz4Encoder};
 use internal::{process_unit, build_writer};
-use signing::signers::{signer_passthrough, SignerPassthrough};
+use signing::signers::{signer_passthrough, SignerPassthrough, verifier_passthrough};
 use walkdir::WalkDir;
 
 use crate::compression::algorithms::lz4_encoder;
@@ -91,14 +91,15 @@ pub async fn compress_directory(
     Ok(())
 }
 
-pub async fn decompress_directory<T: 'static>(
+pub async fn decompress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
-    decompression_algorithm: fn(Result<File, io::Error>) -> Result<T, io::Error>
-) -> io::Result<()> where T: io::Read+Cleanup<fs::File>
+) -> io::Result<()>
 {
-    let mut task_list = Vec::with_capacity(800);
+    let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
 
+    let mut task_list = Vec::with_capacity(800);
+    
     for entry in WalkDir::new(input_folder_path) {
         let entry = entry.unwrap();
         let entry_path = entry.into_path();
@@ -110,7 +111,7 @@ pub async fn decompress_directory<T: 'static>(
         if entry_path == path::Path::new("keyfile.zk") {
             continue;
         }
-
+        
         if entry_path.extension().unwrap_or_default() == "lz4" {
             let parent_path = entry_path.strip_prefix(input_folder_path).unwrap();
 
@@ -122,16 +123,23 @@ pub async fn decompress_directory<T: 'static>(
             std::fs::create_dir_all(current_dir)
                 .expect("Failed to create all the required directories/subdirectories");
 
-            let func = decompression_algorithm.clone();
+
+            let reader = build_writer(
+                aes256_r(
+                    psk.clone(),
+                    psk.clone()
+                ),        
+                lz4_decoder, 
+                verifier_passthrough,
+            );
 
             let decompress_task = tokio::spawn(async move {
-                decompress(
-                    process_unit(
-                        fs::File::open(entry_path),
-                        func
-                    ), 
+                dbg!(decompress(
+                    reader(
+                        fs::File::open(entry_path)
+                    ),
                     fs::File::create(output_path).expect("Failed to create file.")
-                );
+                ));
             });
 
             task_list.push(decompress_task);

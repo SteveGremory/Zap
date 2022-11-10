@@ -8,9 +8,10 @@ use rpassword::prompt_password;
 use std::{
     io::{
         Write,
+        Read,
         Error,
         ErrorKind,
-    }
+    }, fmt::format, vec
 };
 use openssl::{
     hash::{
@@ -19,7 +20,7 @@ use openssl::{
     },
     symm::{
         Cipher,
-        encrypt
+        encrypt, decrypt, Crypter
     }
 };
 
@@ -71,9 +72,9 @@ pub fn convert_pw_to_key(pw: String, len: usize) -> Result<Vec<u8>, Error>
 pub struct Encryptor<T>
 where T: Write
 {
-    cipher: Cipher,
+    cipher: Crypter,
     _key_len: u64,
-    key: Vec<u8>,
+    blocksize: usize,
     _iv: Vec<u8>,
     writer: T
 }
@@ -87,32 +88,27 @@ where T: Write
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        //dbg!(buf.len());
+        
         let buf_len = buf.len();
-        match encrypt(
-            self.cipher, 
-            &self.key, 
-            None, 
-            buf) {
-            Ok(mut v) => {
-                while !v.is_empty() {
-                    let n = self.writer.write(&v)?;
-
-                    if n == 0 {
-                        return Ok(0)
-                    } else {
-                        v = v[n..].to_owned();
-                    }
-                }
-                Ok(buf_len)
-            },
+        let mut enc_buf = vec![0u8;buf_len+self.blocksize];
+        dbg!(&buf_len);
+        let len = match self.cipher.update(
+            &buf, 
+            &mut enc_buf, 
+        ) {
+            Ok(n) => n,
             Err(e) => return Err(
                 Error::new(
                     ErrorKind::Other, 
-                    format!("Encryption failed: {}", e.to_string())
-                )
+                    format!("Failed to encrypt: {}", e.to_string()))
             )
+        };
+
+        if len > 0 {
+            self.writer.write(&enc_buf)?;
         }
+
+        Ok(buf_len)
     }
 }
 
@@ -121,8 +117,63 @@ where
 T: Write
 {
     fn cleanup(mut self) ->  Result<T, Error> {
-        self.flush()?;
+        let mut enc_buf = vec![0u8;self.blocksize];
+        self.cipher.finalize(&mut enc_buf)?;
+        self.writer.write(&mut enc_buf)?;
+        self.writer.flush()?;
         Ok(self.writer)
+    }
+}
+
+pub struct Decryptor<T>
+where T: Read
+{
+    cipher: Crypter,
+    _key_len: u64,
+    blocksize: usize,
+    _iv: Vec<u8>,
+    internal_buffer: Vec<u8>,
+    reader: T
+}
+
+impl<T> Read for Decryptor<T> 
+where T: Read
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        
+        let mut enc_buf = vec![0u8;buf.len()];
+        
+        dbg!("here");
+        self.reader.read_exact(&mut enc_buf)?;
+        dbg!(&enc_buf);
+        dbg!(buf.len());
+        let mut pt_buf = vec![0u8;enc_buf.len()+self.blocksize+self.internal_buffer.len()];
+        pt_buf[0..self.internal_buffer.len()].swap_with_slice(&mut self.internal_buffer);
+        let len = match self.cipher.update(
+            &enc_buf,
+            &mut pt_buf,
+        ) {
+            Ok(n) => n,
+            Err(e) => return Err(
+                Error::new(
+                    ErrorKind::Other, 
+                    format!("Failed to decrypt: {}", e.to_string()))
+            )
+        };
+        buf.swap_with_slice(&mut pt_buf[0..buf.len()]);
+        self.internal_buffer.append(&mut pt_buf[buf.len()..].to_vec());
+        Ok(buf.len())
+    }
+}
+
+impl<T> Cleanup<T> for Decryptor<T>
+where 
+T: Read
+{
+    fn cleanup(mut self) ->  Result<T, Error> {
+        //let mut enc_buf = Vec::new();
+        //self.cipher.finalize(&mut enc_buf)?;
+        Ok(self.reader)
     }
 }
 
