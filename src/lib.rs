@@ -10,26 +10,20 @@ use std::{
 };
 
 use compression::{Cleanup, compress, decompress};
-use encryption::algorithm::encryption_passthrough;
-use internal::{process_unit, bind, build_writer};
-use signing::signers::signer_passthrough;
+use encryption::{algorithm::{aes256}, convert_pw_to_key, Encryptor};
+use crate::compression::algorithms::Lz4Encoder;
+use internal::{process_unit, build_writer};
+use signing::signers::{signer_passthrough, SignerPassthrough};
 use walkdir::WalkDir;
 
-pub async fn compress_directory<T: 'static+Cleanup<T>>(
+use crate::compression::algorithms::lz4_encoder;
+
+pub async fn compress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
-    writer_algorithm: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>,
-    enc: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>,
-    sig: fn(Result<fs::File, io::Error>) -> Result<T, io::Error>
 ) -> io::Result<()> 
-where T: io::Write+Cleanup<fs::File>
 {
-
-    let writer = build_writer(
-        writer_algorithm, 
-        encryption_passthrough,
-        signer_passthrough
-    );
+    let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
 
     let mut task_list = Vec::with_capacity(800);
 
@@ -60,16 +54,31 @@ where T: io::Write+Cleanup<fs::File>
 
         let current_dir = output_path.parent().unwrap();
 
+        let pass = psk.clone();
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
-
-        let func = writer_algorithm.clone();
         // Rewrite to return errors
         let compress_task = tokio::spawn(async move {
-            compress(
+
+            let writer = build_writer(
+                aes256(
+                    pass.clone(),
+                    pass
+                ),
+                lz4_encoder, 
+                signer_passthrough
+            );
+
+            /*let writer = build_writer(
+                encryption_passthrough,
+                writer_algorithm, 
+                signer_passthrough
+            );*/
+
+            dbg!(compress::<std::fs::File, SignerPassthrough<Lz4Encoder<Encryptor<fs::File>>>, fs::File>(
                 fs::File::open(entry_path).expect("Failed to open input file"),
                 writer(fs::File::create(output_path))
-            );
+            ));
         });
 
         task_list.push(compress_task);

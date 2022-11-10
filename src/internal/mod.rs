@@ -1,19 +1,17 @@
 
 use std::io::{
-    Write,
     Error,
     ErrorKind
 };
 
-use openssl::encrypt;
 
 pub fn build_writer<T, U, V, W>(
-    compressor: fn(Result<T, Error>) -> Result<U, Error>,
-    encryptor: fn(Result<U, Error>) -> Result<V, Error>,
-    signer: fn(Result<V, Error>) -> Result<W, Error>,
+    encryptor: impl Fn(Result<T, Error>) -> Result<U, Error>,
+    compressor: impl Fn(Result<U, Error>) -> Result<V, Error>,
+    signer: impl Fn(Result<V, Error>) -> Result<W, Error>,
 ) -> impl Fn(Result<T, Error>) -> Result<W, Error>
 {
-    move | x | signer(encryptor(compressor(x)))
+    move | x | signer(compressor(encryptor(x)))
 }
 
 pub fn return_if_equal<T>(a: T, b: T) -> Result<T, Error>
@@ -45,17 +43,6 @@ pub fn bind<T, U, V>(
 {
     
     move |x| f2(f1(x))
-}
-
-
-fn process_sign<T, U>(
-    input: Result<T, Error>, 
-    func: fn(Result<T, Error>) -> Result<(T, U), Error>
-) -> Result<(T, U), Error>
-where
-T: Write
-{
-    func(input)
 }
 
 /*

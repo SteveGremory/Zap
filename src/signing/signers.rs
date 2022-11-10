@@ -8,8 +8,10 @@ use std::{
 
 use crate::compression::Cleanup;
 
+use super::Signer;
+
 pub fn signer_passthrough<T>(input: Result<T, Error>) -> Result<SignerPassthrough<T>, Error>
-where T: Write+Cleanup<T>
+where T: Write
 {
     match input {
         Err(e) => Err(e),
@@ -22,13 +24,12 @@ where T: Write+Cleanup<T>
 }
 
 pub struct SignerPassthrough<T>
-where T: Write+Cleanup<T>
 {
     inner: T
 }
 
 impl<T> Write for SignerPassthrough<T>
-where T: Write+Cleanup<T>
+where T: Write
 {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
@@ -39,10 +40,15 @@ where T: Write+Cleanup<T>
     }
 }
 
-impl<T> Cleanup<T> for SignerPassthrough<T>
-where T: Write+Cleanup<T>
+impl<T, U> Signer<U> for SignerPassthrough<T>
+where T: Cleanup<U>
 {
-    fn cleanup(self) ->  Result<T, Error> {
-        self.inner.cleanup()
+    fn signature(self) -> Result<Vec<u8>, Error> {
+        Ok([].to_vec())
+    }
+
+    fn cleanup(self) -> Result<Vec<u8>, Error> {
+        self.inner.cleanup()?;
+        Ok([].to_vec())
     }
 }

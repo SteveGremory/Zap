@@ -5,7 +5,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use zapf::{pack_files, unpack_files};
-use zap::{compression::algorithms::{lz4_encoder, lz4_decoder}, internal::build_writer, encryption::algorithm::{encryption_passthrough, aes256}, signing::signers::signer_passthrough};
+use zap::{compression::algorithms::{lz4_decoder}};
 #[derive(Debug, Parser)]
 #[command(
     author,
@@ -61,14 +61,10 @@ impl Command {
         }
     }
 
-    async fn archive(input: String, output: String, encrypt: Option<EncryptionType>, keypath: Option<String>) -> io::Result<()> {
-        
+    async fn archive(input: String, output: String, _encrypt: Option<EncryptionType>, _keypath: Option<String>) -> io::Result<()> {
         zap::compress_directory(
             &input, 
-            "/tmp/stuff",
-            lz4_encoder,
-            None,
-            None
+            "/tmp/stuff"
         ).await?;
 
         let out_file = File::create(&output).expect("Could not create file");
@@ -108,7 +104,7 @@ impl Command {
         fs::remove_dir_all("/tmp/stuff")
     }
 
-    async fn extract(input: String, output: String, decrypt: Option<String>) -> io::Result<()> {
+    async fn extract(input: String, output: String, _decrypt: Option<String>) -> io::Result<()> {
         //dbg!(decrypt)
         //if decrypt {
           //  todo!("Decryption has not been implemented yet.");

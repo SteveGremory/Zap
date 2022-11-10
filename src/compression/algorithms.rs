@@ -39,17 +39,21 @@ where T: Write
     }
 }
 
-impl<T> Cleanup<T> for Lz4Encoder<T>
-where T: Write
+impl<T, U> Cleanup<U> for Lz4Encoder<T>
+where T: Write+Cleanup<U>
 {
-    fn cleanup(self) -> Result<T, Error>
+    fn cleanup(self) -> Result<U, Error>
     {
+        dbg!("her");
         match self.inner.finish()
         {
-            Ok(w) => Ok(w),
-            Err(e) => Err(Error::from(
-                ErrorKind::Interrupted
-            ))
+            Ok(w) => w.cleanup(),
+            Err(e) => Err(
+                Error::new(
+                    ErrorKind::Other, 
+                    format!("Encryption failed: {}", e.to_string())
+                )
+            )
         }
     }
 }
