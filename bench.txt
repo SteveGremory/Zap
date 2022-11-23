@@ -43,3 +43,8 @@ Passthrough - commit after (a44e5277dc14a32001c0d094bfdc454a69cd402c)
 
 Time (mean ± σ):      1.054 s ±  0.256 s    [User: 0.658 s, System: 0.265 s]
 Range (min … max):    0.861 s …  1.714 s    10 runs
+
+Direct Writer --- 846b9ba622817e229d134c38b494ffd7deb09a05
+
+Time (mean ± σ):      1.116 s ±  0.305 s    [User: 0.683 s, System: 0.276 s]
+Range (min … max):    0.872 s …  1.924 s    10 runs
