@@ -25,3 +25,21 @@ Direct Writer --- 846b9ba622817e229d134c38b494ffd7deb09a05
 
 Time (mean ± σ):      1.659 s ±  0.467 s    [User: 0.720 s, System: 0.292 s]
 Range (min … max):    0.990 s …  2.426 s    10 runs
+
+
+------------------------------------------------
+
+After finishing the encryption wrapper:
+
+$ du test/to_comp/
+$ 311612  test/to_comp/
+
+Encrypted -- commit after (a44e5277dc14a32001c0d094bfdc454a69cd402c)
+
+Time (mean ± σ):      1.412 s ±  0.114 s    [User: 0.968 s, System: 0.271 s]
+Range (min … max):    1.236 s …  1.561 s    10 runs
+
+Passthrough - commit after (a44e5277dc14a32001c0d094bfdc454a69cd402c)
+
+Time (mean ± σ):      1.054 s ±  0.256 s    [User: 0.658 s, System: 0.265 s]
+Range (min … max):    0.861 s …  1.714 s    10 runs

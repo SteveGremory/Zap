@@ -117,7 +117,7 @@ impl Command {
             &output,
         ).await?;
 
-        //fs::remove_dir_all("/tmp/unpacked")
+        fs::remove_dir_all("/tmp/unpacked");
         Ok(())
     }
 }

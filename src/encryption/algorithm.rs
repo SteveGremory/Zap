@@ -30,6 +30,7 @@ where T: Write
             _key_len: 256,
             blocksize: Cipher::aes_256_cbc().block_size(),
             _iv: iv.clone(),
+            internal_buffer: Vec::new(),
             writer: x?
         }
     )

@@ -11,7 +11,7 @@ use std::{
         Read,
         Error,
         ErrorKind,
-    }, fmt::format, vec
+    }, fmt::format, vec, os::linux::raw
 };
 use openssl::{
     hash::{
@@ -20,7 +20,7 @@ use openssl::{
     },
     symm::{
         Cipher,
-        encrypt, decrypt, Crypter
+        encrypt, decrypt, Crypter, Mode
     }
 };
 
@@ -76,6 +76,7 @@ where T: Write
     _key_len: u64,
     blocksize: usize,
     _iv: Vec<u8>,
+    internal_buffer: Vec<u8>,
     writer: T
 }
 
@@ -91,7 +92,7 @@ where T: Write
         
         let buf_len = buf.len();
         let mut enc_buf = vec![0u8;buf_len+self.blocksize];
-        dbg!(&buf_len);
+
         let len = match self.cipher.update(
             &buf, 
             &mut enc_buf, 
@@ -105,9 +106,9 @@ where T: Write
         };
 
         if len > 0 {
-            self.writer.write(&enc_buf)?;
+            self.writer.write(&enc_buf[0..len])?;
         }
-
+        
         Ok(buf_len)
     }
 }
@@ -118,7 +119,8 @@ T: Write
 {
     fn cleanup(mut self) ->  Result<T, Error> {
         let mut enc_buf = vec![0u8;self.blocksize];
-        self.cipher.finalize(&mut enc_buf)?;
+        let len = self.cipher.finalize(&mut enc_buf)?;
+        dbg!(len);
         self.writer.write(&mut enc_buf)?;
         self.writer.flush()?;
         Ok(self.writer)
@@ -141,28 +143,44 @@ where T: Read
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         
-        let mut enc_buf = vec![0u8;buf.len()];
+        if self.internal_buffer.len() == 0{
+            let mut raw_buf = vec![0u8;8192];
+            
+            let read_len = self.reader.read(&mut raw_buf)?;
+
+            let mut dec_buf = vec![0u8;read_len+self.blocksize];
+            
+            if read_len > 0 {
+                match self.cipher.update(
+                    &mut raw_buf[0..read_len],
+                    &mut dec_buf
+                ) {
+                    Ok(l) => {
+                        self.internal_buffer.extend_from_slice(&mut dec_buf[0..l]);
+                        let mut fin_buf = vec![0u8; 32];
+                        if read_len < 8192 {
+                            let len = self.cipher.finalize(&mut fin_buf)?;
+                            self.internal_buffer.extend_from_slice(&mut fin_buf[0..len]);
+                        }
+                    },
+                    Err(e) => return Err(
+                        Error::new(
+                            ErrorKind::Other, 
+                            format!("Failed to decrypt: {}", e.to_string()))
+                    )
+                }
+            } else {
+                return Ok(0);
+            }
+        }
+        let cpy_len = std::cmp::min(buf.len(), self.internal_buffer.len());
+        buf[..cpy_len].clone_from_slice(
+            self.internal_buffer
+            .drain(..cpy_len)
+            .as_slice()
+        );
         
-        dbg!("here");
-        self.reader.read_exact(&mut enc_buf)?;
-        dbg!(&enc_buf);
-        dbg!(buf.len());
-        let mut pt_buf = vec![0u8;enc_buf.len()+self.blocksize+self.internal_buffer.len()];
-        pt_buf[0..self.internal_buffer.len()].swap_with_slice(&mut self.internal_buffer);
-        let len = match self.cipher.update(
-            &enc_buf,
-            &mut pt_buf,
-        ) {
-            Ok(n) => n,
-            Err(e) => return Err(
-                Error::new(
-                    ErrorKind::Other, 
-                    format!("Failed to decrypt: {}", e.to_string()))
-            )
-        };
-        buf.swap_with_slice(&mut pt_buf[0..buf.len()]);
-        self.internal_buffer.append(&mut pt_buf[buf.len()..].to_vec());
-        Ok(buf.len())
+        Ok(cpy_len)
     }
 }
 

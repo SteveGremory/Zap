@@ -11,7 +11,7 @@ use std::{
 
 use compression::{Cleanup, compress, decompress, algorithms::lz4_decoder};
 use encryption::{algorithm::{aes256, aes256_r}, convert_pw_to_key, Encryptor};
-use crate::{compression::algorithms::Lz4Encoder};
+use crate::{compression::algorithms::Lz4Encoder, encryption::{encryption_passthrough, EncryptionPassthrough}};
 use internal::{process_unit, build_writer};
 use signing::signers::{signer_passthrough, SignerPassthrough, verifier_passthrough};
 use walkdir::WalkDir;
@@ -24,7 +24,6 @@ pub async fn compress_directory(
 ) -> io::Result<()> 
 {
     let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
-
     let mut task_list = Vec::with_capacity(800);
 
     for entry in WalkDir::new(input_folder_path) {
@@ -61,21 +60,22 @@ pub async fn compress_directory(
         let compress_task = tokio::spawn(async move {
 
             let writer = build_writer(
-                aes256(
-                    pass.clone(),
-                    pass
-                ),
+                //aes256(
+                //    pass.clone(),
+                //    pass
+                //),
+                encryption_passthrough,
                 lz4_encoder, 
                 signer_passthrough
             );
 
             /*let writer = build_writer(
-                encryption_passthrough,
+                
                 writer_algorithm, 
                 signer_passthrough
             );*/
 
-            dbg!(compress::<std::fs::File, SignerPassthrough<Lz4Encoder<Encryptor<fs::File>>>, fs::File>(
+            dbg!(compress::<std::fs::File, SignerPassthrough<Lz4Encoder<EncryptionPassthrough<fs::File>>>, fs::File>(
                 fs::File::open(entry_path).expect("Failed to open input file"),
                 writer(fs::File::create(output_path))
             ));
@@ -97,7 +97,7 @@ pub async fn decompress_directory(
 ) -> io::Result<()>
 {
     let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
-
+    
     let mut task_list = Vec::with_capacity(800);
     
     for entry in WalkDir::new(input_folder_path) {

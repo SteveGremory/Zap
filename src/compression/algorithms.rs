@@ -1,6 +1,7 @@
 // Internal
 use super::Cleanup;
 
+use core::panic;
 // External
 use std::io::{
     Error,
@@ -36,7 +37,6 @@ where T: Write
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let len = self.inner.write(buf)?;
-        dbg!(buf);
         Ok(len)
     }
 }
@@ -77,12 +77,10 @@ impl<T> Read for Lz4Decoder<T>
 where T: Read
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        dbg!("Start");
-        dbg!(buf.len());
-        let ret = self.inner.read_until(buf);
-        dbg!(buf[0..8].to_vec());
-        dbg!(buf.len());
-        Ok(buf.len())
+        
+        let len = self.inner.read(buf)?;
+        
+        Ok(len)
     }
 }
 
