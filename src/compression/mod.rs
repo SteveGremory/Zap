@@ -12,10 +12,7 @@ use std::{
     }
 };
 
-pub trait Cleanup<T>
-{
-    fn cleanup(self) ->  Result<T, Error>;
-}
+
 
 pub fn compress<T, U, V>(mut input: T, output: Result<U, Error>) -> Result<Vec<u8>, Error>
 where 
@@ -24,9 +21,7 @@ U: Write+Signer<V>,
 V: Write
 {
     let mut out = output?;
-    
-    let len = copy(&mut input, &mut out)?;
-    //dbg!(len);
+    copy(&mut input, &mut out)?;
     out.cleanup()
 }
 
@@ -37,9 +32,6 @@ U: Write,
 V: Read
 {
     let mut inp = input?;
-    
-    let len = copy(&mut inp, &mut output)?;
-    
-    inp.cleanup();
-    Ok(true)
+    copy(&mut inp, &mut output)?;
+    inp.cleanup()
 }

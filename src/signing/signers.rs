@@ -7,7 +7,7 @@ use std::{
     }
 };
 
-use crate::compression::Cleanup;
+use crate::internal::Cleanup;
 
 use super::{Signer, Verifier};
 

@@ -4,26 +4,24 @@ pub mod internal;
 pub mod signing;
 
 use std::{
-    fs::{self, File},
-    io::{self, Read},
+    fs::{self},
+    io::{self},
     path,
 };
 
-use compression::{Cleanup, compress, decompress, algorithms::lz4_decoder};
-use encryption::{algorithm::{aes256, aes256_r}, convert_pw_to_key, Encryptor};
-use crate::{compression::algorithms::Lz4Encoder, encryption::{encryption_passthrough, EncryptionPassthrough}};
-use internal::{process_unit, build_writer};
-use signing::signers::{signer_passthrough, SignerPassthrough, verifier_passthrough};
+use compression::{compress, decompress, algorithms::lz4_decoder};
+use encryption::{algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough}};
+use internal::{bind_io_constructors};
+use signing::signers::{signer_passthrough, verifier_passthrough};
 use walkdir::WalkDir;
-
 use crate::compression::algorithms::lz4_encoder;
 
 pub async fn compress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
+    pass: Option<Vec<u8>>
 ) -> io::Result<()> 
 {
-    let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
     let mut task_list = Vec::with_capacity(800);
 
     for entry in WalkDir::new(input_folder_path) {
@@ -53,35 +51,35 @@ pub async fn compress_directory(
 
         let current_dir = output_path.parent().unwrap();
 
-        let pass = psk.clone();
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
-        // Rewrite to return errors
-        let compress_task = tokio::spawn(async move {
 
-            let writer = build_writer(
-                //aes256(
-                //    pass.clone(),
-                //    pass
-                //),
-                encryption_passthrough,
-                lz4_encoder, 
-                signer_passthrough
-            );
+        let psk = pass.clone();
 
-            /*let writer = build_writer(
-                
-                writer_algorithm, 
-                signer_passthrough
-            );*/
+        task_list.push(
+            tokio::spawn(async move {
+                let writer = bind_io_constructors(
+                    match psk {
+                        Some(psk) => {
+                            aes256(
+                                psk.clone(),
+                                vec![0u8;32]
+                            )
+                        },
+                        None => {
+                            encryption_passthrough()
+                        }
+                    },
+                    lz4_encoder, 
+                    signer_passthrough
+                );
 
-            dbg!(compress::<std::fs::File, SignerPassthrough<Lz4Encoder<EncryptionPassthrough<fs::File>>>, fs::File>(
-                fs::File::open(entry_path).expect("Failed to open input file"),
-                writer(fs::File::create(output_path))
-            ));
-        });
-
-        task_list.push(compress_task);
+                compress(
+                    fs::File::open(entry_path).expect("Failed to open input file"),
+                    writer(fs::File::create(output_path))
+                )
+            })
+        )
     }
 
     for val in task_list.into_iter() {
@@ -91,13 +89,14 @@ pub async fn compress_directory(
     Ok(())
 }
 
+// todo: This function will alter the filename of binary files eg:
+// a binary called 'someBinary' will end up as 'someBinary.'
 pub async fn decompress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
+    pass: Option<Vec<u8>>
 ) -> io::Result<()>
 {
-    let psk: Vec<u8> = convert_pw_to_key("password".to_owned(), 256).unwrap();
-    
     let mut task_list = Vec::with_capacity(800);
     
     for entry in WalkDir::new(input_folder_path) {
@@ -123,26 +122,33 @@ pub async fn decompress_directory(
             std::fs::create_dir_all(current_dir)
                 .expect("Failed to create all the required directories/subdirectories");
 
-
-            let reader = build_writer(
-                aes256_r(
-                    psk.clone(),
-                    psk.clone()
-                ),        
-                lz4_decoder, 
-                verifier_passthrough,
-            );
-
-            let decompress_task = tokio::spawn(async move {
-                dbg!(decompress(
-                    reader(
-                        fs::File::open(entry_path)
-                    ),
-                    fs::File::create(output_path).expect("Failed to create file.")
-                ));
-            });
-
-            task_list.push(decompress_task);
+            let psk = pass.clone();
+            task_list.push(
+                tokio::spawn(async move {
+                    let reader = bind_io_constructors(
+                        match psk {
+                            Some(psk) => {
+                                aes256_r(
+                                    psk.clone(),
+                                    vec![0u8;32]
+                                )
+                            },
+                            None => {
+                                decryption_passthrough()
+                            }
+                        },
+                        lz4_decoder, 
+                        verifier_passthrough
+                    );
+    
+                    decompress(
+                        reader(
+                            fs::File::open(entry_path)
+                        ),
+                        fs::File::create(output_path).expect("Failed to create file.")
+                    )
+                })
+            )
         }
     }
 

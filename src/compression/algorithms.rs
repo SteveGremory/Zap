@@ -1,7 +1,6 @@
 // Internal
-use super::Cleanup;
+use crate::internal::Cleanup;
 
-use core::panic;
 // External
 use std::io::{
     Error,
@@ -19,6 +18,14 @@ where T: Write
 {
     Ok( Lz4Encoder { 
         inner: (FrameEncoder::new(input?)) 
+    })
+}
+
+pub fn lz4_decoder<T>(input: Result<T, std::io::Error>) -> Result<Lz4Decoder<T>, std::io::Error>
+where T: Read
+{
+    Ok( Lz4Decoder { 
+        inner: (FrameDecoder::new(input?)) 
     })
 }
 
@@ -59,13 +66,7 @@ where T: Write+Cleanup<U>
     }
 }
 
-pub fn lz4_decoder<T>(input: Result<T, std::io::Error>) -> Result<Lz4Decoder<T>, std::io::Error>
-where T: Read
-{
-    Ok( Lz4Decoder { 
-        inner: (FrameDecoder::new(input?)) 
-    })
-}
+
 
 pub struct Lz4Decoder<T>
 where T: Read

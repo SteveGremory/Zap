@@ -5,7 +5,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use zapf::{pack_files, unpack_files};
-use zap::{compression::algorithms::{lz4_decoder}};
+use zap::{internal::{get_password_confirm, get_password_noconf}};
 #[derive(Debug, Parser)]
 #[command(
     author,
@@ -27,7 +27,9 @@ enum Command {
 
         /// Whether to encrypt the data
         #[arg(short, long)]
-        encrypt: Option<EncryptionType>,
+        encryption: Option<EncryptionType>,
+        /// If EncryptionType is key then keypath must be provided
+        #[arg(short, long)]
         keypath: Option<String>
     },
     Extract {
@@ -38,9 +40,11 @@ enum Command {
         output: String,
 
         /// Whether to encrypt the data
-        /// String is either
         #[arg(short, long)]
-        keypath: Option<String>,
+        encryption: Option<EncryptionType>,
+        /// If EncryptionType is key then keypath must be provided
+        #[arg(short, long)]
+        keypath: Option<String>
     },
 }
 
@@ -50,21 +54,42 @@ impl Command {
             Command::Archive {
                 input,
                 output,
-                encrypt,
+                encryption,
                 keypath,
-            } => Self::archive(input, output, encrypt, keypath).await,
+            } => Self::archive(input, output, encryption, keypath).await,
             Command::Extract {
                 input,
                 output,
+                encryption,
                 keypath,
-            } => Self::extract(input, output, keypath).await,
+            } => Self::extract(input, output, encryption, keypath).await,
         }
     }
 
-    async fn archive(input: String, output: String, _encrypt: Option<EncryptionType>, _keypath: Option<String>) -> io::Result<()> {
+    async fn archive(input: String, output: String, encryption: Option<EncryptionType>, _keypath: Option<String>) -> io::Result<()> {
+
+        let mut pass = None;
+        //let mut key = None;
+
+        if let Some(enc) = encryption {
+            match enc {
+            EncryptionType::Password => {
+                pass = Some(get_password_confirm(256)?);
+            },
+            // Unimplemented
+            EncryptionType::Key => {
+                match _keypath {
+                    None => panic!("No keypath provided."),
+                    Some(_s) => unimplemented!("Keys not currently supported.")
+                }
+            },}
+        }
+        
+
         zap::compress_directory(
             &input, 
-            "/tmp/stuff"
+            "/tmp/stuff",
+            pass
         ).await?;
 
         let out_file = File::create(&output).expect("Could not create file");
@@ -72,53 +97,38 @@ impl Command {
         let mut out_writer = BufWriter::new(out_file);
 
         pack_files("/tmp/stuff", &mut out_writer)?;
-        /*match encrypt {
-            Some(encryption_method) => {
-                let out_file = File::create(format!("{}.tmp", &output))
-                    .expect("Could not create file");
-
-                let mut out_writer = BufWriter::new(out_file);
-
-                pack_files("/tmp/stuff", &mut out_writer)?;
-
-                match encryption_method {
-                    Password => {
-                        zap::encrypt_directory_pw(&output)?;
-                        // remove packed file
-                    },
-                    Key => {
-                        zap::encrypt_directory_key()?;
-                    }
-                }
-            },
-            None => {
-                let out_file = File::create(&output)
-                    .expect("Could not create file");
-
-                let mut out_writer = BufWriter::new(out_file);
-
-                pack_files("/tmp/stuff", &mut out_writer)?;
-            }
-        }*/
-
+        
         fs::remove_dir_all("/tmp/stuff")
         
     }
 
-    async fn extract(input: String, output: String, _decrypt: Option<String>) -> io::Result<()> {
-        //dbg!(decrypt)
-        //if decrypt {
-          //  todo!("Decryption has not been implemented yet.");
-        //}
+    async fn extract(input: String, output: String, decryption: Option<EncryptionType>, _keypath: Option<String>) -> io::Result<()> {
+        let mut pass = None;
+        //let mut key = None;
+
+        if let Some(enc) = decryption {
+            match enc {
+            EncryptionType::Password => {
+                pass = Some(get_password_noconf(256)?);
+            },
+            // Unimplemented
+            EncryptionType::Key => {
+                match _keypath {
+                    None => panic!("No keypath provided."),
+                    Some(_s) => unimplemented!("Keys not currently supported.")
+                }
+            },}
+        }
 
         unpack_files(&input, "/tmp/unpacked")?;
+
         zap::decompress_directory(
             "/tmp/unpacked", 
             &output,
+            pass
         ).await?;
 
-        fs::remove_dir_all("/tmp/unpacked");
-        Ok(())
+        fs::remove_dir_all("/tmp/unpacked")
     }
 }
 
