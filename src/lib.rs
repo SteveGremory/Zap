@@ -55,7 +55,11 @@ pub async fn compress_directory(
             .expect("Failed to create all the required directories/subdirectories");
 
         let psk = pass.clone();
-
+        // Currently each task binds it's own constructor, this is obviously
+        // very inefficient but Box<dyn Fn ...> aren't thread safe
+        // so one cannot pass them over thread boundaries.
+        // Maybe if we add the ability to hot-swap the underlying writer so that it is created once
+        // we can save initialisation and binding, but that will be later.
         task_list.push(
             tokio::spawn(async move {
                 let writer = bind_io_constructors(

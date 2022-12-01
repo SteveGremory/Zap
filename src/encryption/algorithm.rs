@@ -13,6 +13,19 @@ use openssl::{
     symm::{Cipher, Crypter, Mode}
 };
 
+/// This file holds all of the functions that return a Writer/Reader
+/// for encrypting/decrypting data.
+/// Each function should take the arguments necessary to build the struct
+/// excluding the internal writer. It should then return a boxed dynamic
+/// trait with the signature 'Fn(Result<T, Error>) -> Result<Encryptor<T>, Error>'
+/// for encryption and 'Fn(Result<T, Error>) -> Result<Decryptor<T>, Error>'
+/// for decryption. 
+/// A function can then be bound to the signing and comp/decomp constructors
+/// using zap::internal::bind_io_constructors.
+/// 
+/// When adding encryption methods, there is currently some boilerplate in the lib and bin files.
+/// Future versions will work to minimize this.
+
 pub fn aes256<'a, T>(
     psk: Vec<u8>, 
     iv:Vec<u8>, 

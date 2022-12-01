@@ -10,7 +10,7 @@ use zap::{internal::{get_password_confirm, get_password_noconf}};
 #[command(
     author,
     version,
-    about = "Zap is a simple program to compress/encrypt the a folder."
+    about = "Zap is a simple program to compress/encrypt a folder."
 )]
 struct Args {
     #[command(subcommand)]
@@ -70,7 +70,7 @@ impl Command {
 
         let mut pass = None;
         //let mut key = None;
-
+        // This will be update in future versions when there are more alorithms available.
         if let Some(enc) = encryption {
             match enc {
             EncryptionType::Password => {
@@ -105,7 +105,9 @@ impl Command {
     async fn extract(input: String, output: String, decryption: Option<EncryptionType>, _keypath: Option<String>) -> io::Result<()> {
         let mut pass = None;
         //let mut key = None;
-
+        // At the moment, there is no way to tell if an archive uses encryption.
+        // This will be rectified in future but for the moment, the user must tell zap 
+        // to ask for a password.
         if let Some(enc) = decryption {
             match enc {
             EncryptionType::Password => {
@@ -119,7 +121,8 @@ impl Command {
                 }
             },}
         }
-
+        // Need to check if this function validates path names
+        // to prevent directory traversal.
         unpack_files(&input, "/tmp/unpacked")?;
 
         zap::decompress_directory(

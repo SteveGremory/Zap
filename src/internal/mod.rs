@@ -9,27 +9,34 @@ use openssl::{
     hash::MessageDigest
 };
 
+// Cleanup is a function that signals for all nested
+// writers/readers that no more will be read/written
+// and to pad and dump your internal buffers however
+// your implementation does so.
 pub trait Cleanup<T>
 {
     fn cleanup(self) ->  Result<T, Error>;
 }
 
-pub fn bind<T, U, V>(
+// This function binds the three constructors together 
+// to make construction more general.
+// That way we can swap out constructors and dynamically build
+// a processing sequence for the comp/decomp functions use.
+// 'a' is the constructor producing the inner-most struct and as such will be the
+// one directly interacting with the underlying writer (file, socket, etc...).
+// Therefore 'c' is the constructor which produces the struct that is interacted with
+// by the calling function.
+// 
+// With all this considered the function is summed up as taking three constructor and
+// returning a function that takes an underlying writer of type 'T'
+// and returns a writer of type 'W'.
+pub fn bind_io_constructors<T, U, V, W>(
     a: impl Fn(Result<T, Error>) -> Result<U, Error>,
     b: impl Fn(Result<U, Error>) -> Result<V, Error>,
-) -> impl Fn(Result<T, Error>) -> Result<V, Error>
-{
-    move | x | b(a(x))
-}
-
-
-pub fn bind_io_constructors<T, U, V, W>(
-    encryptor: impl Fn(Result<T, Error>) -> Result<U, Error>,
-    compressor: impl Fn(Result<U, Error>) -> Result<V, Error>,
-    signer: impl Fn(Result<V, Error>) -> Result<W, Error>,
+    c: impl Fn(Result<V, Error>) -> Result<W, Error>,
 ) -> impl Fn(Result<T, Error>) -> Result<W, Error>
 {
-    move | x | signer(compressor(encryptor(x)))
+    move | x | c(b(a(x)))
 }
 
 pub fn return_if_equal<T>(a: T, b: T) -> Result<T, Error>
@@ -67,6 +74,8 @@ pub fn get_password_noconf(key_len: usize) -> Result<Vec<u8>, std::io::Error>
     )
 }
 
+// This will need to be reworked later as more encryption algorithms are
+// brought in. May also need to be moved to 'bin'. 
 pub fn convert_pw_to_key(pw: String, len: usize) -> Result<Vec<u8>, Error>
 {
     match len {

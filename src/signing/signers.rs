@@ -11,6 +11,10 @@ use crate::internal::Cleanup;
 
 use super::{Signer, Verifier};
 
+// A lot of this will change as the implementations below
+// are used soely as placeholders so that rest of the system 
+// could be fleshed out better.
+
 pub fn signer_passthrough<T>(input: Result<T, Error>) -> Result<SignerPassthrough<T>, Error>
 where T: Write
 {
