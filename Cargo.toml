@@ -15,3 +15,5 @@ walkdir = "2.3.2"
 tokio = { version = "1.21.2", features = ["full"] }
 clap = { version = "4.0.18", features = ["derive"] }
 zapf = { git = "https://github.com/Speykious/zapf", rev = "4608ab5db49be659a2018ad8826334bb78719b31" }
+openssl = { version = "0.10.42", features = ["vendored"] }
+rpassword = "7.1.0"
