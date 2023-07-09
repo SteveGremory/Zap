@@ -74,7 +74,7 @@ impl Command {
         if let Some(enc) = encryption {
             match enc {
             EncryptionType::Password => {
-                pass = Some(get_password_confirm(256)?);
+                pass = Some(vec![0u8;10]);//Some(get_password_confirm(256)?);
             },
             // Unimplemented
             EncryptionType::Key => {
