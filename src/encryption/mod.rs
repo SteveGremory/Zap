@@ -23,7 +23,6 @@ use aes_gcm::{
 };
 use chacha20::{cipher::{StreamCipherCoreWrapper, typenum::{UInt, UTerm}}, ChaChaCore};
 use chacha20poly1305::{ChaChaPoly1305, consts::{B1, B0}};
-use openssl::symm::{Crypter};
 //use chacha20poly1305::{
 
 //};
@@ -34,7 +33,6 @@ use openssl::symm::{Crypter};
 
 pub type AesGcmEncryptor = AesGcm<Aes256, UInt<UInt<UInt<UInt<UTerm, B1>, B1>, B0>, B0>>;
 pub type ChaChaPolyEncryptor = ChaChaPoly1305<StreamCipherCoreWrapper<ChaChaCore<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B1>, B0>>>>;
-pub type OpenSslSymmCrypter = Crypter;
 
 pub struct Encryptor<T, U>
 where T: Write
@@ -48,6 +46,7 @@ where T: Write
     writer: T
 }
 
+pub trait EncryptorTrait: Write {}
 
 impl<T> Write for Encryptor<T, ()> 
 where T: Write
@@ -60,49 +59,6 @@ where T: Write
         self.writer.write(buf)
     }
 }
-
-impl<T> Write for Encryptor<T, OpenSslSymmCrypter> 
-where T: Write
-{
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.writer.flush()
-    }
-
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // Match acts as a passthrough structs when encryption is off.
-        // This is a bit hacky and will be updated when the struct is generalised.
-
-        let buf_len = buf.len();
-        // This is a very openssl::aes sepcific buffer len.
-        // May change in future as more algorithms are added.
-        let mut enc_buf = vec![0u8;buf_len+32];
-        let len = match self.cipher.update(
-            &buf, 
-            &mut enc_buf, 
-        ) {
-            Ok(n) => n,
-            Err(e) => return Err(
-                Error::new(
-                    ErrorKind::Other, 
-                    format!("Failed to encrypt: {}", e.to_string()))
-            )
-        };
-        // This is also implementation specific. 
-        // As the aes is a block cipher is manages and internal buffer 
-        // and when the buffer reaches a length greater than the blocksize
-        // it will consume a multiple of it's blocksize of bytes and encrypt
-        // them to enc_buf
-        if len > 0 {
-            self.writer.write(&enc_buf[0..len])?;
-        }
-        // Seeing as we either hold or write the whole buffer and the internal buffer will be written
-        // at some point in the future (see 'impl Cleanup for Encryptor') we
-        // can report to the outer Writer that we have written the whole buffer.
-        Ok(buf_len)
-    }
-}
-
 
 impl<T> Write for Encryptor<T, ChaChaPolyEncryptor>
 where T: Write
@@ -248,19 +204,6 @@ where T: Write
     }
 }
 
-impl<T> Cleanup<T> for Encryptor<T, Crypter>
-where T: Write
-{
-    fn cleanup(mut self) ->  Result<T, Error> {
-        
-        let mut enc_buf = vec![0u8;32];
-        self.cipher.finalize(&mut enc_buf)?;
-        self.writer.write(&mut enc_buf)?;
-        
-        self.writer.flush()?;
-        Ok(self.writer)
-    }
-}
 
 /*impl<T> Cleanup<T> for Encryptor<T, AesGcmEncryptor>
 where T: Write

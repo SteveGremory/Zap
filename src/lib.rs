@@ -2,30 +2,37 @@ pub mod compression;
 pub mod encryption;
 pub mod internal;
 pub mod signing;
+pub mod prelude;
+pub mod error;
+pub mod password;
+mod util;
 
 use std::{
     fs::{self},
-    io::{self, Write},
     path,
 };
 
-use aes_gcm::AeadCore;
 use compression::{compress, decompress, algorithms::lz4_decoder};
-use encryption::{algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough, chacha20poly1305, aes256cbc_openssl}};
-use internal::{bind_io_constructors, convert_pw_to_key};
-use signing::{signers::{signer_passthrough, verifier_passthrough}, Signer};
+use encryption::algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough, chacha20poly1305};
+use error::{CompressionError, DecompressionError};
+use internal::bind_io_constructors;
+use password::{convert_pw_to_key, EncryptionSecret};
+use rayon::ThreadPoolBuilder;
+use signing::signers::{signer_passthrough, verifier_passthrough};
 use walkdir::WalkDir;
 use crate::compression::algorithms::lz4_encoder;
 
-pub async fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send>
+pub fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send>
 (
     input_folder_path: &str,
     output_folder_path: &str,
-    pass: Option<Vec<u8>>,
+    _pass: Option<EncryptionSecret>,
     //writer: impl Fn(Result<std::fs::File, std::io::Error>) -> Result<T, std::io::Error>
-) -> io::Result<()> 
+) -> Result<(), CompressionError> 
 {
-    let mut task_list = Vec::with_capacity(800);
+    let thread_pool = ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build()?;
 
     for entry in WalkDir::new(input_folder_path) {
         let entry = entry?;
@@ -57,10 +64,6 @@ pub async fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
         
-        let psk: Vec<u8> = match &pass {
-            Some(p) => p.clone(),
-            None => vec![]
-        };
         // Currently each task binds it's own constructor, this is obviously
         // very inefficient but Box<dyn Fn ...> aren't thread safe
         // so one cannot pass them over thread boundaries.
@@ -69,14 +72,14 @@ pub async fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send
         
         //let w = writer(fs::File::create(output_path));
 
-        task_list.push(
-            tokio::spawn(async move {
+        thread_pool.spawn(
+            move || {
                 /*compress(
                     fs::File::open(entry_path).expect("Failed to open input file"), 
                     w
                 )*/
                 let i = 0;
-                match i {
+                let _r = match i {
                     0 => compress(
                         fs::File::open(entry_path).expect("Failed to open input file"), bind_io_constructors(
                         aes256(
@@ -95,28 +98,15 @@ pub async fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send
                         lz4_encoder, 
                         signer_passthrough
                     )(fs::File::create(output_path))),
-                    2 => compress(
-                        fs::File::open(entry_path).expect("Failed to open input file"),bind_io_constructors(
-                        aes256cbc_openssl(
-                            convert_pw_to_key("password".to_string(), 256).unwrap(),
-                            vec![0u8;32]
-                        ),
-                        lz4_encoder, 
-                        signer_passthrough
-                    )(fs::File::create(output_path))),
                     _ => compress(
                         fs::File::open(entry_path).expect("Failed to open input file"),bind_io_constructors(
                         encryption_passthrough(),
                         lz4_encoder, 
                         signer_passthrough
                     )(fs::File::create(output_path)))
-                }
-            })
-        )
-    }
-
-    for val in task_list.into_iter() {
-        val.await.err();
+                };
+            }
+        );
     }
 
     Ok(())
@@ -124,13 +114,15 @@ pub async fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send
 
 // todo: This function will alter the filename of binary files eg:
 // a binary called 'someBinary' will end up as 'someBinary.'
-pub async fn decompress_directory(
+pub fn decompress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
     pass: Option<Vec<u8>>
-) -> io::Result<()>
+) -> Result<(), DecompressionError>
 {
-    let mut task_list = Vec::with_capacity(800);
+    let thread_pool = ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build()?;
     
     for entry in WalkDir::new(input_folder_path) {
         let entry = entry.unwrap();
@@ -156,8 +148,11 @@ pub async fn decompress_directory(
                 .expect("Failed to create all the required directories/subdirectories");
 
             let psk = pass.clone();
-            task_list.push(
-                tokio::spawn(async move {
+
+
+            thread_pool.spawn(
+
+                move || {
                     let reader = bind_io_constructors(
                         match psk {
                             Some(psk) => {
@@ -174,20 +169,14 @@ pub async fn decompress_directory(
                         verifier_passthrough
                     );
     
-                    decompress(
+                    let _r = decompress(
                         reader(
                             fs::File::open(entry_path)
                         ),
                         fs::File::create(output_path).expect("Failed to create file.")
-                    )
-                })
-            )
+                    );
+                });
         }
     }
-
-    for val in task_list.into_iter() {
-        val.await.err();
-    }
-
     Ok(())
 }

@@ -1,21 +1,15 @@
 //Internal
-use super::{Encryptor, Decryptor, ChaChaPolyEncryptor, AesGcmEncryptor, OpenSslSymmCrypter};
+use super::{Encryptor, Decryptor, ChaChaPolyEncryptor, AesGcmEncryptor};
 
 // External
-use std::{
-    io::{
-        Write,
-        Read,
-        Error,
-        ErrorKind
-    }
+use std::io::{
+    Write,
+    Read,
+    Error,
+    ErrorKind
 };
-use chacha20::ChaChaCore;
 use chacha20poly1305::{consts::{B1, B0}, ChaChaPoly1305};
 use chacha20poly1305::ChaCha20Poly1305;
-use openssl::{
-    symm::{Cipher, Crypter, Mode}
-};
 use aes_gcm::{
     AesGcm,
     aes::{Aes256, cipher::{typenum::{UInt, UTerm}, StreamCipherCoreWrapper}},
@@ -39,32 +33,6 @@ use aes_gcm::{
 /// 
 /// When adding encryption methods, there is currently some boilerplate in the lib and bin files.
 /// Future versions will work to minimize this.
-
-
-type null = ();
-
-
-pub fn aes256cbc_openssl<'a, T>(
-    psk: Vec<u8>, 
-    iv:Vec<u8>, 
-) -> Box<dyn Fn(Result<T, Error>) -> Result<Encryptor<T, Crypter>, Error>>
-where T: Write
-{
-    Box::new( move | x | Ok(
-        Encryptor {
-            cipher:  Crypter::new(
-                Cipher::aes_256_cbc(),
-                Mode::Encrypt,
-                &psk.clone(),
-                None
-            ).unwrap(),
-            key: psk.clone(),
-            nonce: iv.clone(),
-            internal_buffer: vec![],
-            writer: x?
-        }
-    ) )
-}
 
 pub fn chacha20poly1305<'a, T>(
     psk: Vec<u8>, 
