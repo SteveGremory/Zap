@@ -168,52 +168,87 @@ where
     }
 }
 
+mod pipeline_test{
+    use std::fs::File;
 
+    use crate::{
+        compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm},
+        encryption::{chachapoly::ChaChaPolyAlgorithm, EncryptionAlgorithm, DecryptionAlgorithm},
+        error::{PipelineCompressionError, PipelineDecompressionError, PipelineBuildError},
+        signing::{passthrough::SignerPassthroughMethod, SignerMethod, VerifierMethod, Sign, Verify}, password::get_password_noconf,
+    };
 
-fn _example_usage() {
+    use super::{FilePipeline, CompressionPipeline};
 
-    let mut _f = std::fs::File::create("test.txt").unwrap();
+    #[test]
+    fn _example_usage() {
 
-    let mut _enc = ChaChaPolyAlgorithm::new()
-        .with_key(vec![0u8; 32])
-        .with_nonce(vec![0u8; 12])
-        .encryptor(_f)
-        .unwrap();
+        let mut _f = match File::create("./test.out") {
+            Ok(f) => f,
+            Err(e) => panic!("Error: {:?}", e),
+        };
+    
+        let mut _enc = match ChaChaPolyAlgorithm::new()
+            .with_key(get_password_noconf(256).unwrap())
+            .with_nonce(vec![1u8; 12])
+            .encryptor(_f){
+                Ok(e) => e,
+                Err(e) => panic!("Error: {:?}", e),
+            };
+    
+        let mut _comp = match Lz4Algorithm::new().compressor(_enc) {
+            Ok(c) => c,
+            Err(e) => panic!("Error: {:?}", e),
+        };
+    
+        let mut _signer = match SignerPassthroughMethod::new().signer(_comp) {
+            Ok(s) => s,
+            Err(e) => panic!("Error: {:?}", e),
+        };
+    
+        let _p = FilePipeline::from_writer(_signer);
+    
+        let mut input = match File::open("test.in") {
+            Ok(f) => f,
+            Err(e) => panic!("Error: {:?}", e),
+        };
+    
+        match _p.compress(&mut input) {
+            Ok(Some(signature)) => println!("Success: {}", String::from_utf8_lossy(&signature)),
+            Ok(None) => println!("Success: no signature"),
+            Err(e) => println!("Error: {:?}", e),
+        };
 
-    let mut _comp = Lz4Algorithm::new().compressor(_enc).unwrap();
-
-    let mut _signer = SignerPassthroughMethod::new().signer(_comp).unwrap();
-
-    let _p = FilePipeline::from_writer(_signer);
-
-    let mut _f2 = std::fs::File::create("test.txt").unwrap();
-
-    let _pipeline = FilePipeline::builder()
-        .with_encryption(
-            ChaChaPolyAlgorithm::new()
-                .with_key(vec![0u8; 32])
-                .with_nonce(vec![0u8; 12])
-        )
-        .with_compress_algorithm(
-            Lz4Algorithm::new()
-        )
-        .with_signing(
-            SignerPassthroughMethod::new()
-        )
-        .with_io(_f2)
-        .compression_pipeline()
-        .unwrap();
-    //let pipeline = FilePipeline::builder()
-    //    .with_encryption(enc)
-    //    .with_compress_algorithm(comp)
-    //    .with_signing(signer)
-    //    .compression_pipeline();
-
-    //let mut pipeline = Pipeline::new()
-    //    .with_encryption(enc)
-    //    .with_compress_algorithm(comp)
-    //    .build()
-    //    .unwrap();
-
-    //let pipeline =
+        let mut _f2 = std::fs::File::create("test.txt").unwrap();
+    
+        let _pipeline = FilePipeline::builder()
+            .with_encryption(
+                ChaChaPolyAlgorithm::new()
+                    .with_key(vec![0u8; 32])
+                    .with_nonce(vec![0u8; 12])
+            )
+            .with_compress_algorithm(
+                Lz4Algorithm::new()
+            )
+            .with_signing(
+                SignerPassthroughMethod::new()
+            )
+            .with_io(_f2)
+            .compression_pipeline()
+            .unwrap();
+        //let pipeline = FilePipeline::builder()
+        //    .with_encryption(enc)
+        //    .with_compress_algorithm(comp)
+        //    .with_signing(signer)
+        //    .compression_pipeline();
+    
+        //let mut pipeline = Pipeline::new()
+        //    .with_encryption(enc)
+        //    .with_compress_algorithm(comp)
+        //    .build()
+        //    .unwrap();
+    
+        //let pipeline =
+    }
+    
 }

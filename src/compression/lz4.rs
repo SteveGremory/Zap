@@ -62,7 +62,7 @@ where T: Encrypt
             Err(e) => Err(
                 std::io::Error::new(
                     std::io::ErrorKind::Other, 
-                    format!("Encryption failed: {}", e)
+                    format!("Encryption failed: {}", e) // TODO: better error handling
                 )
             )
         }
@@ -73,8 +73,9 @@ impl <T> Write for Lz4Compressor<T>
 where T: Encrypt
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        
+        //println!("Dump buffer: {:?}", buf);
         let len = self.encoder.write(buf)?;
+        println!("Comp write len: {:?}", len);
         
         Ok(len)
     }

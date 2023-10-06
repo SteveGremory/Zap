@@ -101,10 +101,42 @@ pub struct ChaChaPoly<T, M> {
     mode: PhantomData<M>
 } 
 
+impl<T> ChaChaPoly<T, EncryptorMode>
+where
+    T: Write 
+{
+    fn dump_buffer(&mut self) -> Result<Vec<u8>, Error> {
+        let len = std::cmp::min(8192, self.internal_buffer.len());
+
+        match self.cipher.encrypt(
+            // As noted in the struct def, this is will be changed
+            Nonce::from_slice(&self.nonce),
+            /*Payload{
+            msg: self.internal_buffer
+            .drain(..8192)
+            .as_slice(),
+            aad: &self.key
+            }*/
+            self.internal_buffer.drain(..len).as_slice(),
+        ) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed to encrypt: {}", e),
+                ))
+            }
+        }
+    }
+
+}
+
 impl <T> Encrypt for ChaChaPoly<T, EncryptorMode> 
 where T: Write
 {
     fn finalise(mut self) -> Result<(), Error> {
+        let buff = self.dump_buffer()?;
+        self.io.write_all(buff.as_slice())?;
         self.io.flush()?;
         Ok(())
     }
@@ -119,27 +151,16 @@ where
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        println!("Dump buffer enc: {:?}", buf);
+
         self.internal_buffer.extend_from_slice(buf);
+
+        println!("Internal buffer: {:?}", self.internal_buffer.len());
+
         if self.internal_buffer.len() > 8192 {
-            let enc_buf = match self.cipher.encrypt(
-                // As noted in the struct def, this is will be changed
-                Nonce::from_slice(&self.nonce),
-                /*Payload{
-                msg: self.internal_buffer
-                .drain(..8192)
-                .as_slice(),
-                aad: &self.key
-                }*/
-                self.internal_buffer.drain(..8192).as_slice(),
-            ) {
-                Ok(n) => n,
-                Err(e) => {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Failed to encrypt: {}", e),
-                    ))
-                }
-            };
+            println!("Encrypting: {:?}", self.internal_buffer.len());
+
+            let enc_buf = self.dump_buffer()?;
             // This is also implementation specific.
             // As the aes is a block cipher is manages and internal buffer
             // and when the buffer reaches a length greater than the blocksize
