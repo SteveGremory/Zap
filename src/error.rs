@@ -61,12 +61,20 @@ impl From<PasswordError> for ZapError {
 pub enum EncryptionError
 {
     #[error(transparent)]
-    SetupError(EncryptionSecretError)
+    InitError(EncryptionSecretError)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EncryptorInitError {
+    #[error("Failed to init algorithm: {0}")]
+    AlgorithmError(String),
+    #[error(transparent)]
+    EncryptionSecretError(EncryptionSecretError)
 }
 
 impl From<EncryptionSecretError> for EncryptionError {
     fn from(value: EncryptionSecretError) -> Self {
-        EncryptionError::SetupError(value)
+        EncryptionError::InitError(value)
     }
 }
 
@@ -181,4 +189,162 @@ impl From<walkdir::Error> for DecompressionError {
     fn from(value: walkdir::Error) -> Self {
         DecompressionError::FailedToWalkDirectory(value)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineCompressionError {
+    #[error("Generic Error: {0}")]
+    Generic(String),
+    #[error(transparent)]
+    HashingError(HashingError),
+    #[error(transparent)]
+    PasswordError(PasswordError),
+    #[error(transparent)]
+    IOError(std::io::Error),
+    #[error(transparent)]
+    CompressionError(CompressionError),
+    #[error(transparent)]
+    EncryptionError(EncryptionError),
+    #[error(transparent)]
+    EncryptionSecretError(EncryptionSecretError),
+}
+
+impl From<EncryptionSecretError> for PipelineCompressionError {
+    fn from(value: EncryptionSecretError) -> Self {
+        PipelineCompressionError::EncryptionSecretError(value)
+    }
+}
+
+impl From<EncryptionError> for PipelineCompressionError {
+    fn from(value: EncryptionError) -> Self {
+        PipelineCompressionError::EncryptionError(value)
+    }
+}
+
+impl From<CompressionError> for PipelineCompressionError {
+    fn from(value: CompressionError) -> Self {
+        PipelineCompressionError::CompressionError(value)
+    }
+}
+
+impl From<std::io::Error> for PipelineCompressionError {
+    fn from(value: std::io::Error) -> Self {
+        PipelineCompressionError::IOError(value)
+    }
+}
+
+impl From<PasswordError> for PipelineCompressionError {
+    fn from(value: PasswordError) -> Self {
+        PipelineCompressionError::PasswordError(value)
+    }
+}
+
+impl From<HashingError> for PipelineCompressionError {
+    fn from(value: HashingError) -> Self {
+        PipelineCompressionError::HashingError(value)
+    }
+}
+
+impl From<ThreadPoolBuildError> for PipelineCompressionError {
+    fn from(value: ThreadPoolBuildError) -> Self {
+        PipelineCompressionError::CompressionError(CompressionError::FailedToBuildThreadPool(value))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineDecompressionError {
+    #[error("Generic Error: {0}")]
+    Generic(String),
+    #[error(transparent)]
+    HashingError(HashingError),
+    #[error(transparent)]
+    PasswordError(PasswordError),
+    #[error(transparent)]
+    IOError(std::io::Error),
+    #[error(transparent)]
+    DecompressionError(DecompressionError),
+    #[error(transparent)]
+    EncryptionError(EncryptionError),
+    #[error(transparent)]
+    EncryptionSecretError(EncryptionSecretError),
+}
+
+impl From<EncryptionSecretError> for PipelineDecompressionError {
+    fn from(value: EncryptionSecretError) -> Self {
+        PipelineDecompressionError::EncryptionSecretError(value)
+    }
+}
+
+impl From<EncryptionError> for PipelineDecompressionError {
+    fn from(value: EncryptionError) -> Self {
+        PipelineDecompressionError::EncryptionError(value)
+    }
+}
+
+impl From<DecompressionError> for PipelineDecompressionError {
+    fn from(value: DecompressionError) -> Self {
+        PipelineDecompressionError::DecompressionError(value)
+    }
+}
+
+impl From<std::io::Error> for PipelineDecompressionError {
+    fn from(value: std::io::Error) -> Self {
+        PipelineDecompressionError::IOError(value)
+    }
+}
+
+impl From<PasswordError> for PipelineDecompressionError {
+    fn from(value: PasswordError) -> Self {
+        PipelineDecompressionError::PasswordError(value)
+    }
+}
+
+impl From<HashingError> for PipelineDecompressionError {
+    fn from(value: HashingError) -> Self {
+        PipelineDecompressionError::HashingError(value)
+    }
+}
+
+impl From<ThreadPoolBuildError> for PipelineDecompressionError {
+    fn from(value: ThreadPoolBuildError) -> Self {
+        PipelineDecompressionError::DecompressionError(DecompressionError::FailedToBuildThreadPool(value))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineBuildError {
+    #[error(transparent)]
+    CompressInit(CompressorInitError),
+    #[error(transparent)]
+    SignerInit(SignerInitError),
+    #[error(transparent)]
+    EncryptorInit(EncryptorInitError)
+}
+
+impl From<CompressorInitError> for PipelineBuildError {
+    fn from(value: CompressorInitError) -> Self {
+        PipelineBuildError::CompressInit(value)
+    }
+}
+
+impl From<SignerInitError> for PipelineBuildError {
+    fn from(value: SignerInitError) -> Self {
+        PipelineBuildError::SignerInit(value)
+    }
+}
+
+impl From<EncryptorInitError> for PipelineBuildError {
+    fn from(value: EncryptorInitError) -> Self {
+        PipelineBuildError::EncryptorInit(value)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CompressorInitError {
+
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SignerInitError {
+    
 }

@@ -52,7 +52,7 @@ where T: Cleanup<U>
         Ok([].to_vec())
     }
 
-    fn cleanup(self) -> Result<Vec<u8>, Error> {
+    fn finalise(self) -> Result<Vec<u8>, Error> {
         self.inner.cleanup()?;
         Ok([].to_vec())
     }
@@ -91,7 +91,7 @@ where T: Cleanup<U>
         Ok(true)
     }
 
-    fn cleanup(self) -> Result<bool, Error> {
+    fn finalise(self) -> Result<bool, Error> {
         self.inner.cleanup()?;
         Ok(true)
     }

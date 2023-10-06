@@ -89,7 +89,7 @@ impl Command {
             enc
         )?;
 
-        let out_file = File::create(&output).expect("Could not create file");
+        let out_file = File::create(output).expect("Could not create file");
 
         let mut out_writer = BufWriter::new(out_file);
 
@@ -123,7 +123,7 @@ impl Command {
         }
         // Need to check if this function validates path names
         // to prevent directory traversal.
-        unpack_files(&input, "/tmp/unpacked")?;
+        unpack_files(input, "/tmp/unpacked")?;
 
         zap::decompress_directory(
             "/tmp/unpacked", 

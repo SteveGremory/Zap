@@ -5,6 +5,7 @@ pub mod signing;
 pub mod prelude;
 pub mod error;
 pub mod password;
+pub mod pipeline;
 mod util;
 
 use std::{
@@ -13,7 +14,7 @@ use std::{
 };
 
 use compression::{compress, decompress, algorithms::lz4_decoder};
-use encryption::algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough, chacha20poly1305};
+use encryption::algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough};
 use error::{CompressionError, DecompressionError};
 use internal::bind_io_constructors;
 use password::{convert_pw_to_key, EncryptionSecret};
@@ -89,21 +90,22 @@ pub fn compress_directory//<T: Signer<U>+Write+Send+'static, U: Write+Send>
                         lz4_encoder, 
                         signer_passthrough
                     )(fs::File::create(output_path))),
-                    1 => compress(
-                        fs::File::open(entry_path).expect("Failed to open input file"),bind_io_constructors(
-                        chacha20poly1305(
-                            convert_pw_to_key("password".to_string(), 256).unwrap(),
-                            vec![0u8;12]
-                        ),
-                        lz4_encoder, 
-                        signer_passthrough
-                    )(fs::File::create(output_path))),
+                    //1 => compress(
+                    //    fs::File::open(entry_path).expect("Failed to open input file"),bind_io_constructors(
+                    //    chacha20poly1305(
+                    //        convert_pw_to_key("password".to_string(), 256).unwrap(),
+                    //        vec![0u8;12]
+                    //    ),
+                    //    lz4_encoder, 
+                    //    signer_passthrough
+                    //)(fs::File::create(output_path))),
                     _ => compress(
-                        fs::File::open(entry_path).expect("Failed to open input file"),bind_io_constructors(
-                        encryption_passthrough(),
-                        lz4_encoder, 
-                        signer_passthrough
-                    )(fs::File::create(output_path)))
+                        fs::File::open(entry_path).expect("Failed to open input file"),
+                        bind_io_constructors(
+                            encryption_passthrough(),
+                            lz4_encoder, 
+                            signer_passthrough
+                        )(fs::File::create(output_path)))
                 };
             }
         );

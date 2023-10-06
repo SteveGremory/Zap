@@ -8,17 +8,10 @@ use std::io::{
     Error,
     ErrorKind
 };
-use chacha20poly1305::{consts::{B1, B0}, ChaChaPoly1305};
 use chacha20poly1305::ChaCha20Poly1305;
 use aes_gcm::{
-    AesGcm,
-    aes::{Aes256, cipher::{typenum::{UInt, UTerm}, StreamCipherCoreWrapper}},
     Aes256Gcm,
-    AeadCore, 
     KeyInit,
-    aead::{
-        Aead
-    }
 };
 
 /// This file holds all of the functions that return a Writer/Reader
@@ -34,10 +27,10 @@ use aes_gcm::{
 /// When adding encryption methods, there is currently some boilerplate in the lib and bin files.
 /// Future versions will work to minimize this.
 
-pub fn chacha20poly1305<'a, T>(
+pub fn chacha20poly1305<T>(
     psk: Vec<u8>, 
     nonce:Vec<u8>, 
-) -> Box<dyn Fn(Result<T, Error>) -> Result<Encryptor<T, ChaChaPolyEncryptor>, Error>>
+) -> impl Fn(Result<T, Error>) -> Result<Encryptor<T, ChaChaPolyEncryptor>, Error>
 where T: Write
 {
     Box::new( move | x | Ok(
@@ -62,7 +55,7 @@ where T: Write
 pub fn aes256<'a, T>(
     psk: Vec<u8>, 
     nonce:Vec<u8>, 
-) -> Box<dyn Fn(Result<T, Error>) -> Result<Encryptor<T, AesGcmEncryptor>, Error>>
+) -> impl Fn(Result<T, Error>) -> Result<Encryptor<T, AesGcmEncryptor>, Error>
 where T: Write
 {
     Box::new( move | x | Ok(
@@ -84,7 +77,7 @@ where T: Write
     ) )
 }
 
-pub fn encryption_passthrough<'a, T>() -> Box< dyn Fn(Result<T, Error>) -> Result<Encryptor<T, ()>, Error> >
+pub fn encryption_passthrough<'a, T>() -> impl Fn(Result<T, Error>) -> Result<Encryptor<T, ()>, Error> 
 where T: Write
 {
     Box::new( move | x | Ok(
@@ -117,7 +110,7 @@ where T: Read
                     ))
                 }
             ),
-            key: psk.clone(),
+            _key: psk.clone(),
             nonce: nonce.clone(),
             internal_buffer: Vec::new(),
             reader: x?
@@ -131,7 +124,7 @@ where T: Read
     Box::new( move | x | Ok(
         Decryptor {
             cipher:  None,
-            key: vec![],
+            _key: vec![],
             nonce: vec![],
             internal_buffer: Vec::new(),
             reader: x?
