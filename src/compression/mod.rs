@@ -1,4 +1,3 @@
-pub mod algorithms;
 pub mod lz4;
 pub mod gzip;
 pub mod snappy;

@@ -1,40 +1,31 @@
 // External
-use std::{
-    io::{
-        Write,
-        Read,
-        Error
-    }
-};
+use std::io::{Error, Read, Write};
 
 use crate::internal::Cleanup;
 
 use super::{Signer, Verifier};
 
 // A lot of this will change as the implementations below
-// are used soely as placeholders so that rest of the system 
+// are used soely as placeholders so that rest of the system
 // could be fleshed out better.
 
 pub fn signer_passthrough<T>(input: Result<T, Error>) -> Result<SignerPassthrough<T>, Error>
-where T: Write
+where
+    T: Write,
 {
     match input {
         Err(e) => Err(e),
-        Ok(input) => Ok(
-            SignerPassthrough{
-                inner: input
-            }
-        )
+        Ok(input) => Ok(SignerPassthrough { inner: input }),
     }
 }
 
-pub struct SignerPassthrough<T>
-{
-    inner: T
+pub struct SignerPassthrough<T> {
+    inner: T,
 }
 
 impl<T> Write for SignerPassthrough<T>
-where T: Write
+where
+    T: Write,
 {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
@@ -46,7 +37,8 @@ where T: Write
 }
 
 impl<T, U> Signer<U> for SignerPassthrough<T>
-where T: Cleanup<U>
+where
+    T: Cleanup<U>,
 {
     fn signature(self) -> Result<Vec<u8>, Error> {
         Ok([].to_vec())
@@ -59,25 +51,22 @@ where T: Cleanup<U>
 }
 
 pub fn verifier_passthrough<T>(input: Result<T, Error>) -> Result<VerifierPassthrough<T>, Error>
-where T: Read
+where
+    T: Read,
 {
     match input {
         Err(e) => Err(e),
-        Ok(input) => Ok(
-            VerifierPassthrough {
-                inner: input
-            }
-        )
+        Ok(input) => Ok(VerifierPassthrough { inner: input }),
     }
 }
 
-pub struct VerifierPassthrough<T>
-{
-    inner: T
+pub struct VerifierPassthrough<T> {
+    inner: T,
 }
 
 impl<T> Read for VerifierPassthrough<T>
-where T: Read
+where
+    T: Read,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.inner.read(buf)
@@ -85,7 +74,8 @@ where T: Read
 }
 
 impl<T, U> Verifier<U> for VerifierPassthrough<T>
-where T: Cleanup<U>
+where
+    T: Cleanup<U>,
 {
     fn signature(self) -> Result<bool, Error> {
         Ok(true)

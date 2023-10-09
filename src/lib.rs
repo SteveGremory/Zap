@@ -13,18 +13,17 @@ use std::{
     path::{self, Path, PathBuf}, sync::Arc, backtrace,
 };
 
-use compression::{compress, decompress, algorithms::lz4_decoder, lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm};
+use compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm};
 use crossbeam::sync::WaitGroup;
 use encryption::{passthrough::{EncryptorPassthrough, DecryptorPassthrough}, xchachapoly::XChaChaPolyAlgorithm, EncryptionAlgorithm};
 use error::{CompressionError, DecompressionError};
-use internal::bind_io_constructors;
 use log::{info, error};
-use password::{convert_pw_to_key, EncryptionSecret};
+use password::EncryptionSecret;
 use pipeline::{CompressionPipeline, DecompressionPipeline};
 use rayon::ThreadPoolBuilder;
-use signing::{signers::{signer_passthrough, verifier_passthrough}, passthrough::{SignerPassthrough, VerifierPassthrough}};
+use signing::passthrough::{SignerPassthrough, VerifierPassthrough};
 use walkdir::WalkDir;
-use crate::{compression::algorithms::lz4_encoder, encryption::DecryptionAlgorithm};
+use crate::encryption::DecryptionAlgorithm;
 
 pub fn compress_directory
 (
@@ -118,7 +117,7 @@ pub fn compress_directory
                                     },
                                 };
                             },
-                            EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
+                            EncryptionSecret::Key(_p) => unimplemented!("Keyfile encryption not implemented yet"),
                         },
                         None => {
                             let enc = EncryptorPassthrough::from(destination);
@@ -250,7 +249,7 @@ pub fn decompress_directory(
                                         },
                                     };
                                 },
-                                EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
+                                EncryptionSecret::Key(_p) => unimplemented!("Keyfile encryption not implemented yet"),
                             },
                             None => {
                                 info!("Building decompressor: {:?} -> {:?}", entry_path.display(), output_path.display());

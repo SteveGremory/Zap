@@ -108,7 +108,9 @@ impl Command {
 
         init_logger(log_level)?;
 
-        let enc =  match encryption {
+        log::error!("pid: {}", std::process::id());
+
+        let enc: Option<EncryptionSecret> =  match encryption {
             Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
             None => None
         };
@@ -130,12 +132,10 @@ impl Command {
 
     fn extract(input: String, output: String, decryption: Option<EncryptionType>, keypath: Option<String>, log_level: Verbosity) -> Result<(), ZapError> {
         init_logger(log_level)?;
-        let mut pass = None;
-        //let mut key = None;
-        // At the moment, there is no way to tell if an archive uses encryption.
-        // This will be rectified in future but for the moment, the user must tell zap 
-        // to ask for a password.
-        let enc =  match decryption {
+
+        log::error!("pid: {}", std::process::id());
+        
+        let enc: Option<EncryptionSecret> =  match decryption {
             Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
             None => None
         };
@@ -147,7 +147,7 @@ impl Command {
         zap::decompress_directory(
             "/tmp/unpacked", 
             &output,
-            pass
+            enc
         )?;
 
         Ok(fs::remove_dir_all("/tmp/unpacked")?)

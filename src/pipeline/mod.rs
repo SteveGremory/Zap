@@ -1,8 +1,8 @@
 use std::io::{Write, Read, copy};
 
 use crate::{
-    compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm},
-    encryption::{chachapoly::ChaChaPolyAlgorithm, EncryptionAlgorithm, DecryptionAlgorithm},
+    compression::{CompressionAlgorithm, DecompressionAlgorithm},
+    encryption::{EncryptionAlgorithm, DecryptionAlgorithm},
     error::{PipelineCompressionError, PipelineDecompressionError, PipelineBuildError},
     signing::{SignerMethod, VerifierMethod, Sign, Verify},
 };

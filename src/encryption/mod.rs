@@ -4,30 +4,11 @@ pub mod passthrough;
 pub mod xchachapoly;
 
 //Internal
-use crate::{internal::Cleanup, error::EncryptorInitError};
+use crate::error::EncryptorInitError;
 
 // External
-use aes_gcm::{
-    aead::{Aead, AeadMutInPlace},
-    aes::Aes256,
-    AeadCore, AesGcm, KeyInit, Nonce,
-};
 
-use chacha20::{
-    cipher::{
-        typenum::{UInt, UTerm},
-        StreamCipherCoreWrapper,
-    },
-    ChaChaCore,
-};
-use chacha20poly1305::{
-    consts::{B0, B1},
-    ChaChaPoly1305,
-};
-use std::{
-    io::{Error, ErrorKind, Read, Write},
-    vec,
-};
+use std::io::{Error, Read, Write};
 
 pub struct EncryptorMode;
 pub struct DecryptorMode;
@@ -40,7 +21,8 @@ pub trait DecryptionModule: Read {
 }
 
 pub trait EncryptionAlgorithm<T>
-where T: Write
+where
+    T: Write,
 {
     type Encryptor: EncryptionModule;
 
@@ -48,7 +30,8 @@ where T: Write
 }
 
 pub trait DecryptionAlgorithm<T>
-where T: Read
+where
+    T: Read,
 {
     type Decryptor: DecryptionModule;
 

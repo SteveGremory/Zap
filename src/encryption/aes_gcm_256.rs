@@ -1,13 +1,12 @@
 use std::{
     io::{Error, ErrorKind, Read, Write},
-    marker::PhantomData, os::linux::raw,
+    marker::PhantomData,
 };
 
 // External
 use aes_gcm::{
-    aead::{Aead, AeadMutInPlace, OsRng, Nonce},
-    aes::Aes256,
-    AeadCore, AesGcm, KeyInit, Aes256Gcm,
+    aead::{Aead, OsRng, Nonce},
+    AeadCore, KeyInit, Aes256Gcm,
 };
 use log::info;
 
@@ -70,7 +69,6 @@ where T: Write
                     Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("AesGcm: {}", e))),
                 },
                 nonce,
-                tag: None,
                 internal_buffer: vec![],
                 io,
                 mode: PhantomData
@@ -92,7 +90,6 @@ where T: Read
                     Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("AesGcm: {}", e))),
                 },
                 nonce: Nonce::<Aes256Gcm>::default(),
-                tag: None,
                 internal_buffer: vec![],
                 io,
                 mode: PhantomData
@@ -104,7 +101,6 @@ where T: Read
 pub struct AesGcmEncryptor<T, M> {
     cipher: Aes256Gcm,
     nonce: Nonce<Aes256Gcm>,
-    tag: Option<Vec<u8>>,
     internal_buffer: Vec<u8>,
     io: T,
     mode: PhantomData<M>,
