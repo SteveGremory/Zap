@@ -3,9 +3,32 @@ use std::{
     io::BufWriter,
 };
 
-use clap::{Parser, Subcommand};
-use zap::{password::{get_password_noconf, EncryptionType, EncryptionSecret}, error::ZapError};
+use clap::{Parser, Subcommand, ValueEnum};
+use simple_logger::SimpleLogger;
+use zap::{password::{EncryptionType, EncryptionSecret}, error::ZapError};
 use zapf::{pack_files, unpack_files};
+
+fn init_logger(level: Verbosity) -> Result<(), log::SetLoggerError> {
+    let level = match level {
+        Verbosity::Quiet => log::LevelFilter::Off,
+        Verbosity::Normal => log::LevelFilter::Error,
+        Verbosity::Verbose => log::LevelFilter::Info,
+        Verbosity::Debug => log::LevelFilter::Trace,
+    };
+
+    SimpleLogger::new()
+        .with_level(level)
+        .without_timestamps()
+        .init()
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum Verbosity {
+    Quiet,
+    Normal,
+    Verbose,
+    Debug,
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -38,7 +61,10 @@ enum Command {
         encryption: Option<EncryptionType>,
         /// If EncryptionType is key then keypath must be provided
         #[arg(short, long)]
-        keypath: Option<String>
+        keypath: Option<String>,
+        #[arg(short, long, default_value = "normal")]
+        log_level: Verbosity,
+
     },
     Extract {
         /// Input file
@@ -52,7 +78,9 @@ enum Command {
         encryption: Option<EncryptionType>,
         /// If EncryptionType is key then keypath must be provided
         #[arg(short, long)]
-        keypath: Option<String>
+        keypath: Option<String>,
+        #[arg(short, long, default_value = "normal")]
+        log_level: Verbosity,
     },
 }
 
@@ -64,19 +92,21 @@ impl Command {
                 output,
                 encryption,
                 keypath,
-            } => Self::archive(input, output, encryption, keypath),
+                log_level,
+            } => Self::archive(input, output, encryption, keypath, log_level),
             Command::Extract {
                 input,
                 output,
                 encryption,
                 keypath,
-            } => Self::extract(input, output, encryption, keypath),
+                log_level,
+            } => Self::extract(input, output, encryption, keypath, log_level),
         }
     }
 
-    fn archive(input: String, output: String, encryption: Option<EncryptionType>, keypath: Option<String>) -> Result<(), ZapError> {
+    fn archive(input: String, output: String, encryption: Option<EncryptionType>, keypath: Option<String>, log_level: Verbosity) -> Result<(), ZapError> {
 
-        println!("{:?}", encryption);
+        init_logger(log_level)?;
 
         let enc =  match encryption {
             Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
@@ -85,7 +115,7 @@ impl Command {
 
         zap::compress_directory(
             &input, 
-            "/tmp/stuff",
+            "/tmp/unpacked",
             enc
         )?;
 
@@ -93,13 +123,13 @@ impl Command {
 
         let mut out_writer = BufWriter::new(out_file);
 
-        pack_files("/tmp/stuff", &mut out_writer)?;
+        pack_files("/tmp/unpacked", &mut out_writer)?;
         
-        Ok(fs::remove_dir_all("/tmp/stuff")?)
-        
+        Ok(fs::remove_dir_all("/tmp/unpacked")?)
     }
 
-    fn extract(input: String, output: String, decryption: Option<EncryptionType>, keypath: Option<String>) -> Result<(), ZapError> {
+    fn extract(input: String, output: String, decryption: Option<EncryptionType>, keypath: Option<String>, log_level: Verbosity) -> Result<(), ZapError> {
+        init_logger(log_level)?;
         let mut pass = None;
         //let mut key = None;
         // At the moment, there is no way to tell if an archive uses encryption.
@@ -109,6 +139,7 @@ impl Command {
             Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
             None => None
         };
+
         // Need to check if this function validates path names
         // to prevent directory traversal.
         unpack_files(input, "/tmp/unpacked")?;
@@ -120,5 +151,6 @@ impl Command {
         )?;
 
         Ok(fs::remove_dir_all("/tmp/unpacked")?)
+        //Ok(())
     }
 }

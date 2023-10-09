@@ -18,6 +18,8 @@ pub enum ZapError {
     EncryptionError(EncryptionError),
     #[error(transparent)]
     EncryptionSecretError(EncryptionSecretError),
+    #[error(transparent)]
+    FailedToInitialiseLogger(log::SetLoggerError),
 }
 
 impl From<EncryptionSecretError> for ZapError {
@@ -54,6 +56,12 @@ impl From<std::io::Error> for ZapError {
 impl From<PasswordError> for ZapError {
     fn from(value: PasswordError) -> Self {
         ZapError::PasswordError(value)
+    }
+}
+
+impl From<log::SetLoggerError> for ZapError {
+    fn from(value: log::SetLoggerError) -> Self {
+        ZapError::FailedToInitialiseLogger(value)
     }
 }
 

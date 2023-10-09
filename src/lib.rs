@@ -10,19 +10,21 @@ mod util;
 
 use std::{
     fs::{self},
-    path, sync::Arc,
+    path::{self, Path, PathBuf}, sync::Arc, backtrace,
 };
 
 use compression::{compress, decompress, algorithms::lz4_decoder, lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm};
+use crossbeam::sync::WaitGroup;
 use encryption::{passthrough::{EncryptorPassthrough, DecryptorPassthrough}, xchachapoly::XChaChaPolyAlgorithm, EncryptionAlgorithm};
 use error::{CompressionError, DecompressionError};
 use internal::bind_io_constructors;
+use log::{info, error};
 use password::{convert_pw_to_key, EncryptionSecret};
 use pipeline::{CompressionPipeline, DecompressionPipeline};
 use rayon::ThreadPoolBuilder;
 use signing::{signers::{signer_passthrough, verifier_passthrough}, passthrough::{SignerPassthrough, VerifierPassthrough}};
 use walkdir::WalkDir;
-use crate::compression::algorithms::lz4_encoder;
+use crate::{compression::algorithms::lz4_encoder, encryption::DecryptionAlgorithm};
 
 pub fn compress_directory
 (
@@ -32,13 +34,17 @@ pub fn compress_directory
 ) -> Result<(), CompressionError> 
 {
     let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(4)
+        .num_threads(16)
         .build()?;
+
+    let wg = WaitGroup::new();
     
     let secret_ref = Arc::new(secret);
 
     for entry in WalkDir::new(input_folder_path) {
+
         let entry = entry?;
+
         let entry_path = entry.into_path();
 
         // Skip if it's a dir
@@ -51,16 +57,16 @@ pub fn compress_directory
             continue;
         }
 
-        let parent_path = entry_path.strip_prefix(input_folder_path).unwrap();
+        let parent_path = match entry_path.strip_prefix(input_folder_path) {
+            Ok(p) => p,
+            Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
+        };
+        
         let output_path =
-            path::Path::new(output_folder_path).join(parent_path.with_extension(format!(
-                "{}.lz4",
-                parent_path
-                    .extension()
-                    .unwrap_or_default()
-                    .to_str()
-                    .unwrap_or_default()
-        )));
+            path::Path::new(output_folder_path).join(
+                rewrite_ext(parent_path));
+
+        info!("Compressing: {:?} -> {:?}", entry_path.display(), output_path.display());
 
         let current_dir = output_path.parent().unwrap();
 
@@ -68,47 +74,88 @@ pub fn compress_directory
             .expect("Failed to create all the required directories/subdirectories");
 
         let secret_ref = secret_ref.clone();
+        let wg_ref = wg.clone();
 
         thread_pool.spawn(
         move || {
-            let mut source = match fs::File::open(entry_path) {
-                Ok(f) => f,
-                Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
-            };
 
-            let destination = match fs::File::create(output_path) {
-                Ok(f) => f,
-                Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
-            };
-
-            match secret_ref.as_ref() {
-                Some(p) => match p {
-                    EncryptionSecret::Password(p) => {
-                        let enc = XChaChaPolyAlgorithm::new()
-                            .with_key(p.clone())
-                            .encryptor(destination)
-                            .unwrap();
-                    },
-                    EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
-                },
-                None => {
-                    let enc = EncryptorPassthrough::from(destination);
-                    let comp = match Lz4Algorithm::new().compressor(enc) {
-                        Ok(c) => c,
+            let result = std::panic::catch_unwind(
+                ||  {
+                    let mut source = match fs::File::open(&entry_path) {
+                        Ok(f) => f,
                         Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
                     };
-                    let sign = SignerPassthrough::from(comp);
-
-                    let pipeline = pipeline::TaskPipeline::from_writer(sign);
-
-                    match pipeline.compress(&mut source) {
-                        Ok(_) => println!("Success!"),
-                        Err(e) => panic!("Error: {:?}", e),
+        
+                    let destination = match fs::File::create(&output_path) {
+                        Ok(f) => f,
+                        Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
                     };
+        
+                    match secret_ref.as_ref() {
+                        Some(p) => match p {
+                            EncryptionSecret::Password(p) => {
+                                let enc = XChaChaPolyAlgorithm::new()
+                                    .with_key(p.clone())
+                                    .encryptor(destination)
+                                    .unwrap();
+
+                                let comp = match Lz4Algorithm::new().compressor(enc) {
+                                    Ok(c) => c,
+                                    Err(e) => panic!("Failed to build compress while compressing '{:?}': {:?}", output_path.display(), e), // TODO: Graceful cleanup
+                                };
+
+                                let sign = SignerPassthrough::from(comp);
+
+                                let pipeline = pipeline::TaskPipeline::from_writer(sign);
+
+                                match pipeline.compress(&mut source) {
+                                    Ok(_) => info!("Finished compressing '{:?}' successfully", entry_path.display()),
+                                    Err(e) => {
+                                        let bt = backtrace::Backtrace::capture();
+                                        error!("Error while compressing '{}': {:?}", entry_path.display(), e);
+                                        log::trace!("Error while compressing '{}': {:?}", entry_path.display(), bt);
+                                        panic!();
+                                    },
+                                };
+                            },
+                            EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
+                        },
+                        None => {
+                            let enc = EncryptorPassthrough::from(destination);
+                            let comp = match Lz4Algorithm::new().compressor(enc) {
+                                Ok(c) => c,
+                                Err(e) => panic!("Failed to build compress while compressing '{:?}': {:?}", output_path.display(), e), // TODO: Graceful cleanup
+                            };
+                            let sign = SignerPassthrough::from(comp);
+        
+                            let pipeline = pipeline::TaskPipeline::from_writer(sign);
+        
+                            match pipeline.compress(&mut source) {
+                                Ok(_) => info!("Finished compressing '{:?}' successfully", entry_path.display()),
+                                Err(e) => {
+                                    let bt = backtrace::Backtrace::capture();
+                                    error!("Error while compressing '{}': {:?}", entry_path.display(), e);
+                                    log::trace!("Error while compressing '{}': {:?}", entry_path.display(), bt);
+                                    panic!();
+                                },
+                            };
+                        }
+                    };
+        
+                    drop(wg_ref);
                 }
-            };
+            );
+
+            match result {
+                Ok(_) => {},
+                Err(e) => {
+                    log::trace!("Thread panicked while handling file: {:?}\nMessage: {:?}", entry_path.display(), e);
+                }
+            }
         });
     }
+
+    wg.wait();
 
     Ok(())
 }
@@ -122,12 +169,15 @@ pub fn decompress_directory(
 ) -> Result<(), DecompressionError>
 {
     let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(4)
+        .num_threads(1)
         .build()?;
+
+    let wg = WaitGroup::new();
 
     let secret_ref = Arc::new(secret);
     
     for entry in WalkDir::new(input_folder_path) {
+
         let entry = entry.unwrap();
         let entry_path = entry.into_path();
 
@@ -144,6 +194,8 @@ pub fn decompress_directory(
 
             let output_path =
                 path::Path::new(output_folder_path).join(parent_path.with_extension(""));
+                
+            info!("Decompressing: {:?} -> {:?}", entry_path.display(), output_path.display());
 
             let current_dir = output_path.parent().unwrap();
 
@@ -151,48 +203,102 @@ pub fn decompress_directory(
                 .expect("Failed to create all the required directories/subdirectories");
 
             let secret_ref = secret_ref.clone();
+            let wg_ref = wg.clone();
 
             thread_pool.spawn(
 
             move || {
-                let mut source = match fs::File::open(entry_path) {
-                    Ok(f) => f,
-                    Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
-                };
-
-                let destination = match fs::File::create(output_path) {
-                    Ok(f) => f,
-                    Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
-                };
-
-                match secret_ref.as_ref() {
-                    Some(p) => match p {
-                        EncryptionSecret::Password(p) => {
-                            let enc = XChaChaPolyAlgorithm::new()
-                                .with_key(p.clone())
-                                .encryptor(destination)
-                                .unwrap();
-                        },
-                        EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
-                    },
-                    None => {
-                        let enc = DecryptorPassthrough::from(destination);
-                        let comp = match Lz4Algorithm::new().decompressor(enc) {
-                            Ok(c) => c,
+                let result = std::panic::catch_unwind(
+                    || {
+                        let source = match fs::File::open(&entry_path) {
+                            Ok(f) => f,
                             Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
                         };
-                        let sign = VerifierPassthrough::from(comp);
-
-                        let pipeline = pipeline::TaskPipeline::from_reader(sign);
-
-                        match pipeline.decompress(&mut source) {
-                            Ok(_) => println!("Success!"),
-                            Err(e) => panic!("Error: {:?}", e),
+        
+                        let mut destination = match fs::File::create(&output_path) {
+                            Ok(f) => f,
+                            Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
                         };
+        
+                        match secret_ref.as_ref() {
+        
+                            Some(p) => match p {
+                                EncryptionSecret::Password(p) => {
+                                    let enc = match XChaChaPolyAlgorithm::new()
+                                        .with_key(p.clone())
+                                        .decryptor(source){
+                                            Ok(e) => e,
+                                            Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
+                                        };
+
+                                    let comp = match Lz4Algorithm::new().decompressor(enc) {
+                                        Ok(c) => c,
+                                        Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
+                                    };
+
+                                    let sign = VerifierPassthrough::from(comp);
+
+                                    let pipeline = pipeline::TaskPipeline::from_reader(sign);
+
+                                    match pipeline.decompress(&mut destination) {
+                                        Ok(_) => info!("Finished decompressing '{:?}' successfully", entry_path.display()),
+                                        Err(e) => {
+                                            let bt = backtrace::Backtrace::capture();
+                                            error!("Error while decompressing '{}': {:?}", entry_path.display(), e);
+                                            log::trace!("Error while decompressing '{}': {:?}", entry_path.display(), bt);
+                                            panic!();
+                                        },
+                                    };
+                                },
+                                EncryptionSecret::Key(p) => unimplemented!("Keyfile encryption not implemented yet"),
+                            },
+                            None => {
+                                info!("Building decompressor: {:?} -> {:?}", entry_path.display(), output_path.display());
+        
+                                let enc = DecryptorPassthrough::from(source);
+                                let comp = match Lz4Algorithm::new().decompressor(enc) {
+                                    Ok(c) => c,
+                                    Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
+                                };
+                                let sign = VerifierPassthrough::from(comp);
+        
+                                let pipeline = pipeline::TaskPipeline::from_reader(sign);
+        
+                                info!("Starting decompression: {:?} -> {:?}", entry_path.display(), output_path.display());
+        
+                                match pipeline.decompress(&mut destination) {
+                                    Ok(_) => info!("Finished decompressing '{:?}' successfully", entry_path.display()),
+                                    Err(e) => {
+                                        let bt = backtrace::Backtrace::capture();
+                                        error!("Error while decompressing '{}': {:?}", entry_path.display(), e);
+                                        log::trace!("Error while decompressing '{}': {:?}", entry_path.display(), bt);
+                                        panic!();
+                                    },
+                                };
+                            }
+                        };
+        
+                        drop(wg_ref)
+                    });
+                
+                match result {
+                    Ok(_) => {},
+                    Err(e) => {
+                        log::trace!("Thread panicked while handling file: {:?}\nMessage: {:?}", entry_path.display(), e);
                     }
-                };
+                }
             });
         }
     }
+
+    wg.wait();
+
     Ok(())
+}
+
+fn rewrite_ext(path: &Path) -> PathBuf {
+    match path.extension() {
+        Some(ext) => path.with_extension(format!("{}.lz4", ext.to_str().unwrap())),
+        None => path.with_extension("lz4"),
+    }
 }

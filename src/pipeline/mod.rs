@@ -13,7 +13,7 @@ pub trait CompressionPipeline {
 }
 
 pub trait DecompressionPipeline {
-    fn decompress<F>(self, input: &mut F) -> Result<Option<Vec<u8>>, PipelineDecompressionError>
+    fn decompress<F>(self, output: &mut F) -> Result<Option<Vec<u8>>, PipelineDecompressionError>
     where F: Write;
 }
 
@@ -169,13 +169,15 @@ where
 }
 
 mod pipeline_test{
-    use std::fs::File;
+    use std::{fs::File, path::{Path, PathBuf}};
 
     use aes_gcm::AeadInPlace;
+    use log::info;
+    use simple_logger::SimpleLogger;
 
     use crate::{
         compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm},
-        encryption::{chachapoly::ChaChaPolyAlgorithm, EncryptionAlgorithm, DecryptionAlgorithm, passthrough::EncryptionPassthrough, aes_gcm_256::AesGcmAlgorithm, xchachapoly::XChaChaPolyAlgorithm, EncryptionModule},
+        encryption::{chachapoly::ChaChaPolyAlgorithm, EncryptionAlgorithm, DecryptionAlgorithm, passthrough::{EncryptionPassthrough, EncryptorPassthrough, DecryptorPassthrough}, aes_gcm_256::AesGcmAlgorithm, xchachapoly::XChaChaPolyAlgorithm, EncryptionModule},
         error::{PipelineCompressionError, PipelineDecompressionError, PipelineBuildError},
         signing::{SignerMethod, VerifierMethod, Sign, Verify, passthrough::{SignerPassthrough, VerifierPassthrough}}, password::get_password_noconf,
     };
@@ -184,17 +186,24 @@ mod pipeline_test{
 
     #[test]
     fn test_enc() {
+        SimpleLogger::new()
+            .with_level(log::LevelFilter::Info)
+            .without_timestamps()
+            .init().unwrap();
+
         let f = match File::create("./test.out") {
             Ok(f) => f,
             Err(e) => panic!("Error: {:?}", e),
         };
 
-        let enc = match ChaChaPolyAlgorithm::new()
-            .with_key(get_password_noconf(256).unwrap())
-            .encryptor(f) {
-                Ok(e) => e,
-                Err(e) => panic!("Error: {:?}", e),
-            };
+        //let enc = match ChaChaPolyAlgorithm::new()
+        //    .with_key(get_password_noconf(256).unwrap())
+        //    .encryptor(f) {
+        //        Ok(e) => e,
+        //        Err(e) => panic!("Error: {:?}", e),
+        //    };
+
+        let enc = EncryptorPassthrough::from(f);
 
         let comp = match Lz4Algorithm::new().compressor(enc) {
             Ok(c) => c,
@@ -211,23 +220,30 @@ mod pipeline_test{
         };
 
         match pipeline.compress(&mut input) {
-            Ok(_) => println!("Success!"),
-            Err(e) => println!("Error: {:?}", e),
+            Ok(_) => info!("Success!"),
+            Err(e) => info!("Error: {:?}", e),
         };
     }
 
     #[test]
     fn test_decr() {
-        let f = match File::open("./test.out") {
+        SimpleLogger::new()
+            .with_level(log::LevelFilter::Info)
+            .without_timestamps()
+            .init().unwrap();
+
+        let f = match File::open("/tmp/unpacked/target/debug/deps/liblz4_flex-9fe350bc26f9e006.rlib.lz4") {
             Ok(f) => f,
             Err(e) => panic!("Out Error: {:?}", e),
         };
-        let enc = match ChaChaPolyAlgorithm::new()
-            .with_key(get_password_noconf(256).unwrap())
-            .decryptor(f) {
-                Ok(e) => e,
-                Err(e) => panic!("Dec pt Error: {:?}", e),
-            };
+        //let enc = match ChaChaPolyAlgorithm::new()
+        //    .with_key(get_password_noconf(256).unwrap())
+        //    .decryptor(f) {
+        //        Ok(e) => e,
+        //        Err(e) => panic!("Dec pt Error: {:?}", e),
+        //    };
+
+        let enc = DecryptorPassthrough::from(f);
 
         let comp = match Lz4Algorithm::new().decompressor(enc) {
             Ok(c) => c,
@@ -244,8 +260,8 @@ mod pipeline_test{
         };
 
         match pipeline.decompress(&mut output) {
-            Ok(_) => println!("Success!"),
-            Err(e) => println!("Pipeline Error: {:?}", e),
+            Ok(_) => info!("Success!"),
+            Err(e) => info!("Pipeline Error: {:?}", e),
         };
     }    
 }

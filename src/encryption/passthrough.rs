@@ -102,8 +102,7 @@ impl <T> Read for DecryptorPassthrough<T>
 where T: Read
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let len = self.inner.read(buf);
-        len
+        self.inner.read(buf)
     }
 }
 

@@ -1,4 +1,4 @@
-use lz4_flex::frame::{FrameDecoder, FrameEncoder};
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use std::io::{Read, Write};
 
 use crate::{
@@ -8,61 +8,71 @@ use crate::{
 
 use super::{Compress, CompressionAlgorithm, Decompress, DecompressionAlgorithm};
 
-pub struct Lz4Algorithm {}
+pub struct GzipAlgorithm {
+    level: Compression,
+}
 
-impl<T> CompressionAlgorithm<T> for Lz4Algorithm
+impl GzipAlgorithm {
+    pub fn with_compression_level(level: Compression) -> GzipAlgorithm {
+        GzipAlgorithm { level }
+    }
+
+    pub fn new() -> GzipAlgorithm {
+        GzipAlgorithm {
+            level: Compression::fast(),
+        }
+    }
+}
+
+impl<T> CompressionAlgorithm<T> for GzipAlgorithm
 where
     T: EncryptionModule,
 {
-    type Compressor = Lz4Compressor<T>;
+    type Compressor = GzipCompressor<T>;
 
     fn compressor(&self, io: T) -> Result<Self::Compressor, CompressorInitError> {
-        Ok(Lz4Compressor::new(io))
+        Ok(GzipCompressor {
+            encoder: GzEncoder::new(io, self.level),
+        })
     }
 }
 
-impl<T> DecompressionAlgorithm<T> for Lz4Algorithm
+impl<T> DecompressionAlgorithm<T> for GzipAlgorithm
 where
     T: DecryptionModule,
 {
-    type Decompressor = Lz4Deompressor<T>;
+    type Decompressor = GzipDeompressor<T>;
 
     fn decompressor(&self, io: T) -> Result<Self::Decompressor, CompressorInitError> {
-        Ok(Lz4Deompressor::new(io))
+        Ok(GzipDeompressor::new(io))
     }
 }
 
-impl Lz4Algorithm {
-    pub fn new() -> Lz4Algorithm {
-        Lz4Algorithm {}
-    }
-}
-
-impl Default for Lz4Algorithm {
+impl Default for GzipAlgorithm {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub struct Lz4Compressor<T>
+pub struct GzipCompressor<T>
 where
     T: EncryptionModule,
 {
-    encoder: FrameEncoder<T>,
+    encoder: GzEncoder<T>,
 }
 
-impl<T> Lz4Compressor<T>
+impl<T> GzipCompressor<T>
 where
     T: EncryptionModule,
 {
     pub fn new(io: T) -> Self {
-        Lz4Compressor {
-            encoder: FrameEncoder::new(io),
+        GzipCompressor {
+            encoder: GzEncoder::new(io, Compression::fast()),
         }
     }
 }
 
-impl<T> Compress for Lz4Compressor<T>
+impl<T> Compress for GzipCompressor<T>
 where
     T: EncryptionModule,
 {
@@ -77,7 +87,7 @@ where
     }
 }
 
-impl<T> Write for Lz4Compressor<T>
+impl<T> Write for GzipCompressor<T>
 where
     T: EncryptionModule,
 {
@@ -92,25 +102,25 @@ where
     }
 }
 
-pub struct Lz4Deompressor<T>
+pub struct GzipDeompressor<T>
 where
     T: DecryptionModule,
 {
-    decoder: FrameDecoder<T>,
+    decoder: GzDecoder<T>,
 }
 
-impl<T> Lz4Deompressor<T>
+impl<T> GzipDeompressor<T>
 where
     T: DecryptionModule,
 {
     pub fn new(io: T) -> Self {
-        Lz4Deompressor {
-            decoder: FrameDecoder::new(io),
+        GzipDeompressor {
+            decoder: GzDecoder::new(io),
         }
     }
 }
 
-impl<T> Decompress for Lz4Deompressor<T>
+impl<T> Decompress for GzipDeompressor<T>
 where
     T: DecryptionModule,
 {
@@ -119,7 +129,7 @@ where
     }
 }
 
-impl<T> Read for Lz4Deompressor<T>
+impl<T> Read for GzipDeompressor<T>
 where
     T: DecryptionModule,
 {

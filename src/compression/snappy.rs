@@ -1,5 +1,6 @@
-use lz4_flex::frame::{FrameDecoder, FrameEncoder};
 use std::io::{Read, Write};
+
+use snap::{write::FrameEncoder, read::FrameDecoder};
 
 use crate::{
     encryption::{DecryptionModule, EncryptionModule},
@@ -8,66 +9,66 @@ use crate::{
 
 use super::{Compress, CompressionAlgorithm, Decompress, DecompressionAlgorithm};
 
-pub struct Lz4Algorithm {}
+pub struct SnappyAlgorithm {}
 
-impl<T> CompressionAlgorithm<T> for Lz4Algorithm
+impl<T> CompressionAlgorithm<T> for SnappyAlgorithm
 where
     T: EncryptionModule,
 {
-    type Compressor = Lz4Compressor<T>;
+    type Compressor = SnappyCompressor<T>;
 
     fn compressor(&self, io: T) -> Result<Self::Compressor, CompressorInitError> {
-        Ok(Lz4Compressor::new(io))
+        Ok(SnappyCompressor::new(io))
     }
 }
 
-impl<T> DecompressionAlgorithm<T> for Lz4Algorithm
+impl<T> DecompressionAlgorithm<T> for SnappyAlgorithm
 where
     T: DecryptionModule,
 {
-    type Decompressor = Lz4Deompressor<T>;
+    type Decompressor = SnappyDeompressor<T>;
 
     fn decompressor(&self, io: T) -> Result<Self::Decompressor, CompressorInitError> {
-        Ok(Lz4Deompressor::new(io))
+        Ok(SnappyDeompressor::new(io))
     }
 }
 
-impl Lz4Algorithm {
-    pub fn new() -> Lz4Algorithm {
-        Lz4Algorithm {}
+impl SnappyAlgorithm {
+    pub fn new() -> SnappyAlgorithm {
+        SnappyAlgorithm {}
     }
 }
 
-impl Default for Lz4Algorithm {
+impl Default for SnappyAlgorithm {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub struct Lz4Compressor<T>
+pub struct SnappyCompressor<T>
 where
     T: EncryptionModule,
 {
     encoder: FrameEncoder<T>,
 }
 
-impl<T> Lz4Compressor<T>
+impl<T> SnappyCompressor<T>
 where
     T: EncryptionModule,
 {
     pub fn new(io: T) -> Self {
-        Lz4Compressor {
+        SnappyCompressor {
             encoder: FrameEncoder::new(io),
         }
     }
 }
 
-impl<T> Compress for Lz4Compressor<T>
+impl<T> Compress for SnappyCompressor<T>
 where
     T: EncryptionModule,
 {
     fn finalise(self) -> Result<(), std::io::Error> {
-        match self.encoder.finish() {
+        match self.encoder.into_inner() {
             Ok(w) => w.finalise(),
             Err(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -77,7 +78,7 @@ where
     }
 }
 
-impl<T> Write for Lz4Compressor<T>
+impl<T> Write for SnappyCompressor<T>
 where
     T: EncryptionModule,
 {
@@ -92,25 +93,25 @@ where
     }
 }
 
-pub struct Lz4Deompressor<T>
+pub struct SnappyDeompressor<T>
 where
     T: DecryptionModule,
 {
     decoder: FrameDecoder<T>,
 }
 
-impl<T> Lz4Deompressor<T>
+impl<T> SnappyDeompressor<T>
 where
     T: DecryptionModule,
 {
     pub fn new(io: T) -> Self {
-        Lz4Deompressor {
+        SnappyDeompressor {
             decoder: FrameDecoder::new(io),
         }
     }
 }
 
-impl<T> Decompress for Lz4Deompressor<T>
+impl<T> Decompress for SnappyDeompressor<T>
 where
     T: DecryptionModule,
 {
@@ -119,7 +120,7 @@ where
     }
 }
 
-impl<T> Read for Lz4Deompressor<T>
+impl<T> Read for SnappyDeompressor<T>
 where
     T: DecryptionModule,
 {
