@@ -5,9 +5,7 @@ use std::io::{
     Error
 };
 
-use crate::compression::{Compress, Decompress};
-
-use super::{Encrypt, Decrypt, EncryptionAlgorithm, DecryptionAlgorithm};
+use super::{EncryptionModule, DecryptionModule, EncryptionAlgorithm, DecryptionAlgorithm};
 
 pub struct EncryptionPassthrough {
 
@@ -31,16 +29,34 @@ pub struct EncryptorPassthrough<T> {
     inner: T
 }
 
-impl <T> Encrypt for EncryptorPassthrough<T>
-where T: Compress
+impl <T> EncryptorPassthrough<T>
+where T: Write
 {
-    fn finalise(self) -> Result<(), Error> {
-        self.inner.finalise()
+    pub fn new(writer: T) -> Self {
+        EncryptorPassthrough {
+            inner: writer
+        }
+    }
+}
+
+impl <T> From<T> for EncryptorPassthrough<T>
+where T: Write
+{
+    fn from(writer: T) -> Self {
+        EncryptorPassthrough::new(writer)
+    }
+}
+
+impl <T> EncryptionModule for EncryptorPassthrough<T>
+where T: Write
+{
+    fn finalise(mut self) -> Result<(), Error> {
+        self.flush()
     }
 }
 
 impl <T> Write for EncryptorPassthrough<T>
-where T: Compress
+where T: Write
 {
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
@@ -56,11 +72,29 @@ pub struct DecryptorPassthrough<T>
     inner: T
 }
 
-impl <T> Decrypt for DecryptorPassthrough<T>
-where T: Decompress
+impl <T> DecryptorPassthrough<T>
+where T: Read
+{
+    pub fn new(reader: T) -> Self {
+        DecryptorPassthrough {
+            inner: reader
+        }
+    }
+}
+
+impl <T> From<T> for DecryptorPassthrough<T>
+where T: Read
+{
+    fn from(reader: T) -> Self {
+        DecryptorPassthrough::new(reader)
+    }
+}
+
+impl <T> DecryptionModule for DecryptorPassthrough<T>
+where T: Read
 {
     fn finalise(self) -> Result<(), Error> {
-        self.inner.finalise()
+        Ok(())
     }
 }
 
@@ -68,12 +102,13 @@ impl <T> Read for DecryptorPassthrough<T>
 where T: Read
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.inner.read(buf)
+        let len = self.inner.read(buf);
+        len
     }
 }
 
 impl <T> EncryptionAlgorithm<T> for EncryptionPassthrough
-where T: Compress
+where T: Write
 {
     type Encryptor = EncryptorPassthrough<T>;
 
@@ -87,7 +122,7 @@ where T: Compress
 }
 
 impl <T> DecryptionAlgorithm<T> for EncryptionPassthrough
-where T: Decompress
+where T: Read
 {
     type Decryptor = DecryptorPassthrough<T>;
 

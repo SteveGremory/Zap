@@ -9,26 +9,26 @@ use crate::{compression::{Compress, Decompress}, error::SignerInitError};
 
 use super::{SignerMethod, Sign, Verify, VerifierMethod};
 
-pub struct SignerPassthroughMethod {
-
+pub struct SignerPassthrough<T> {
+    inner: T
 }
 
-impl SignerPassthroughMethod {
-    pub fn new() -> Self {
-        SignerPassthroughMethod {
-
+impl <T> SignerPassthrough<T>
+where T: Compress
+{
+    pub fn new(writer: T) -> Self {
+        SignerPassthrough {
+            inner: writer
         }
     }
 }
 
-impl Default for SignerPassthroughMethod {
-    fn default() -> Self {
-        SignerPassthroughMethod::new()
+impl <T> From<T> for SignerPassthrough<T>
+where T: Compress
+{
+    fn from(writer: T) -> Self {
+        SignerPassthrough::new(writer)
     }
-}
-
-pub struct SignerPassthrough<T> {
-    inner: T
 }
 
 impl <T> Sign for SignerPassthrough<T>
@@ -57,6 +57,24 @@ pub struct VerifierPassthrough<T>
     inner: T
 }
 
+impl <T> VerifierPassthrough<T>
+where T: Decompress
+{
+    pub fn new(reader: T) -> Self {
+        VerifierPassthrough {
+            inner: reader
+        }
+    }
+}
+
+impl <T> From<T> for VerifierPassthrough<T>
+where T: Decompress
+{
+    fn from(reader: T) -> Self {
+        VerifierPassthrough::new(reader)
+    }
+}
+
 impl <T> Verify for VerifierPassthrough<T>
 where T: Decompress
 {
@@ -70,34 +88,7 @@ impl <T> Read for VerifierPassthrough<T>
 where T: Read
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.inner.read(buf)
-    }
-}
-
-impl <T> SignerMethod<T> for SignerPassthroughMethod
-where T: Compress
-{
-    type Signer = SignerPassthrough<T>;
-
-    fn signer(&self, writer: T) -> Result<Self::Signer, SignerInitError> {
-        Ok(
-            SignerPassthrough {
-                inner: writer
-            }
-        )
-    }
-}
-
-impl <T> VerifierMethod<T> for SignerPassthroughMethod
-where T: Decompress
-{
-    type Verifier = VerifierPassthrough<T>;
-
-    fn verifier(&self, reader: T) -> Result<Self::Verifier, SignerInitError> {
-        Ok(
-            VerifierPassthrough {
-                inner: reader
-            }
-        )
+        let len = self.inner.read(buf);
+        len
     }
 }

@@ -99,28 +99,16 @@ impl Command {
         
     }
 
-    fn extract(input: String, output: String, decryption: Option<EncryptionType>, _keypath: Option<String>) -> Result<(), ZapError> {
+    fn extract(input: String, output: String, decryption: Option<EncryptionType>, keypath: Option<String>) -> Result<(), ZapError> {
         let mut pass = None;
         //let mut key = None;
         // At the moment, there is no way to tell if an archive uses encryption.
         // This will be rectified in future but for the moment, the user must tell zap 
         // to ask for a password.
-        if let Some(enc) = decryption {
-            match enc {
-                EncryptionType::Password => pass = 
-                    match get_password_noconf(256) {
-                        Ok(pass) => Some(pass),
-                        Err(e) => return Err(e.into())
-                    },
-                // Unimplemented
-                EncryptionType::Key => {
-                    match _keypath {
-                        None => panic!("No keypath provided."),
-                        Some(_s) => unimplemented!("Keys not currently supported.")
-                    }
-                },
-            }
-        }
+        let enc =  match decryption {
+            Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
+            None => None
+        };
         // Need to check if this function validates path names
         // to prevent directory traversal.
         unpack_files(input, "/tmp/unpacked")?;

@@ -7,7 +7,7 @@ use lz4_flex::frame::{
     FrameDecoder
 };
 
-use crate::{error::CompressorInitError, encryption::{Encrypt, Decrypt}};
+use crate::{error::CompressorInitError, encryption::{EncryptionModule, DecryptionModule}};
 
 use super::{Compress, CompressionAlgorithm, DecompressionAlgorithm, Decompress};
 
@@ -15,7 +15,7 @@ pub struct Lz4Algorithm {
 }
 
 impl <T> CompressionAlgorithm<T> for Lz4Algorithm
-where T: Encrypt
+where T: EncryptionModule
 {
     type Compressor = Lz4Compressor<T>;
 
@@ -38,13 +38,13 @@ impl Default for Lz4Algorithm {
 }
 
 pub struct Lz4Compressor<T>
-where T: Encrypt
+where T: EncryptionModule
 {
     encoder: FrameEncoder<T>,
 }
 
 impl <T> Lz4Compressor<T> 
-where T: Encrypt
+where T: EncryptionModule
 {
     pub fn new(io: T) -> Self {
         Lz4Compressor {
@@ -54,7 +54,7 @@ where T: Encrypt
 }
 
 impl <T> Compress for Lz4Compressor<T> 
-where T: Encrypt
+where T: EncryptionModule
 {
     fn finalise(self) -> Result<(), std::io::Error> {
         match self.encoder.finish() {
@@ -70,12 +70,10 @@ where T: Encrypt
 }
 
 impl <T> Write for Lz4Compressor<T>
-where T: Encrypt
+where T: EncryptionModule
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        //println!("Dump buffer: {:?}", buf);
         let len = self.encoder.write(buf)?;
-        println!("Comp write len: {:?}", len);
         
         Ok(len)
     }
@@ -86,13 +84,13 @@ where T: Encrypt
 }
 
 pub struct Lz4Deompressor<T>
-where T: Decrypt
+where T: DecryptionModule
 {
     decoder: FrameDecoder<T>,
 }
 
 impl <T> Lz4Deompressor<T>
-where T: Decrypt
+where T: DecryptionModule
 {
     pub fn new(io: T) -> Self {
         Lz4Deompressor {
@@ -102,7 +100,7 @@ where T: Decrypt
 }
 
 impl <T> Decompress for Lz4Deompressor<T> 
-where T: Decrypt
+where T: DecryptionModule
 {
     fn finalise(self) -> Result<(), std::io::Error> {
         self.decoder.into_inner().finalise()
@@ -110,18 +108,17 @@ where T: Decrypt
 }
 
 impl <T> Read for Lz4Deompressor<T>
-where T: Decrypt
+where T: DecryptionModule
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        
+
         let len = self.decoder.read(buf)?;
-        
         Ok(len)
     }
 }
 
 impl <T> DecompressionAlgorithm<T> for Lz4Algorithm
-where T: Decrypt
+where T: DecryptionModule
 {
     type Decompressor = Lz4Deompressor<T>;
 

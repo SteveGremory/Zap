@@ -6,7 +6,7 @@ use aes_gcm::{
     aead::{Aead, OsRng},
     KeyInit, AeadCore,
 };
-use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use std::{
     io::{Error, ErrorKind, Read, Write},
     vec, marker::PhantomData,
@@ -14,45 +14,45 @@ use std::{
 
 use super::{EncryptionAlgorithm, EncryptorMode, DecryptionAlgorithm, DecryptorMode, EncryptionModule, DecryptionModule};
 
-const NONCE_SIZE: usize = 12;
+const NONCE_SIZE: usize = 24;
 
-pub struct ChaChaPolyAlgorithm<T> {
+pub struct XChaChaPolyAlgorithm<T> {
     key: T,
 }
 
-impl ChaChaPolyAlgorithm<()> {
-    pub fn new() -> ChaChaPolyAlgorithm<()> {
-        ChaChaPolyAlgorithm {
+impl XChaChaPolyAlgorithm<()> {
+    pub fn new() -> XChaChaPolyAlgorithm<()> {
+        XChaChaPolyAlgorithm {
             key: (),
         }
     }
 }
 
-impl Default for ChaChaPolyAlgorithm<()> {
+impl Default for XChaChaPolyAlgorithm<()> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl <T> ChaChaPolyAlgorithm<T> {
+impl <T> XChaChaPolyAlgorithm<T> {
 
-    pub fn with_key(self, key: Vec<u8>) -> ChaChaPolyAlgorithm<Vec<u8>> {
-        ChaChaPolyAlgorithm {
+    pub fn with_key(self, key: Vec<u8>) -> XChaChaPolyAlgorithm<Vec<u8>> {
+        XChaChaPolyAlgorithm {
             key,
         }
     }
 }
 
-impl <T> EncryptionAlgorithm<T> for ChaChaPolyAlgorithm<Vec<u8>>
+impl <T> EncryptionAlgorithm<T> for XChaChaPolyAlgorithm<Vec<u8>>
 where T: Write
 {
-    type Encryptor = ChaChaPoly<T, EncryptorMode>;
+    type Encryptor = XChaChaPoly<T, EncryptorMode>;
 
-    fn encryptor(&self, writer: T) -> Result<ChaChaPoly<T, EncryptorMode>, EncryptorInitError> {
-        Ok(ChaChaPoly {
-            cipher: match ChaCha20Poly1305::new_from_slice(&self.key[0..]) {
+    fn encryptor(&self, writer: T) -> Result<XChaChaPoly<T, EncryptorMode>, EncryptorInitError> {
+        Ok(XChaChaPoly {
+            cipher: match XChaCha20Poly1305::new_from_slice(&self.key[0..]) {
                 Ok(k) => k,
-                Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("ChaChaPoly: {}", e))),
+                Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("XChaChaPoly: {}", e))),
             },
             internal_buffer: vec![],
             io: writer,
@@ -61,16 +61,16 @@ where T: Write
     }
 }
 
-impl<T> DecryptionAlgorithm<T> for ChaChaPolyAlgorithm<Vec<u8>>
+impl<T> DecryptionAlgorithm<T> for XChaChaPolyAlgorithm<Vec<u8>>
 where T: Read
 {
-    type Decryptor = ChaChaPoly<T, DecryptorMode>;
+    type Decryptor = XChaChaPoly<T, DecryptorMode>;
 
-    fn decryptor(&self, reader: T) -> Result<ChaChaPoly<T, DecryptorMode>, EncryptorInitError> {
-        Ok(ChaChaPoly {
-            cipher: match ChaCha20Poly1305::new_from_slice(&self.key[0..]) {
+    fn decryptor(&self, reader: T) -> Result<XChaChaPoly<T, DecryptorMode>, EncryptorInitError> {
+        Ok(XChaChaPoly {
+            cipher: match XChaCha20Poly1305::new_from_slice(&self.key[0..]) {
                 Ok(k) => k,
-                Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("ChaChaPoly: {}", e))),
+                Err(e) => return Err(EncryptorInitError::AlgorithmError(format!("XChaChaPoly: {}", e))),
             },
             internal_buffer: vec![],
             io: reader,
@@ -79,8 +79,8 @@ where T: Read
     }
 }
 
-pub struct ChaChaPoly<T, M> {
-    cipher: ChaCha20Poly1305,
+pub struct XChaChaPoly<T, M> {
+    cipher: XChaCha20Poly1305,
     // Temporarily stored as Vec<u8> until it is decided how
     // How the nonce will be stored as in zap metadata
     internal_buffer: Vec<u8>,
@@ -88,7 +88,7 @@ pub struct ChaChaPoly<T, M> {
     mode: PhantomData<M>,
 } 
 
-impl <T> EncryptionModule for ChaChaPoly<T, EncryptorMode> 
+impl <T> EncryptionModule for XChaChaPoly<T, EncryptorMode> 
 where T: Write
 {
     fn finalise(mut self) -> Result<(), Error> {
@@ -97,7 +97,7 @@ where T: Write
 
             let buf = self.internal_buffer.drain(..drain_len);
 
-            let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+            let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
             
             match self.cipher.encrypt(&nonce, buf.as_slice()) {
                 Ok(n) => {
@@ -118,7 +118,7 @@ where T: Write
     }
 }
 
-impl<T> Write for ChaChaPoly<T, EncryptorMode>
+impl<T> Write for XChaChaPoly<T, EncryptorMode>
 where
     T: Write,
 {
@@ -139,7 +139,7 @@ where
         while self.internal_buffer.len() > 8192 {
             let buf = self.internal_buffer.drain(..8192);
 
-            let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+            let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
 
             match self.cipher.encrypt(&nonce, buf.as_slice()) {
                 Ok(n) => {
@@ -158,7 +158,7 @@ where
     }
 }
 
-impl <T> DecryptionModule for ChaChaPoly<T, DecryptorMode>
+impl <T> DecryptionModule for XChaChaPoly<T, DecryptorMode>
 where T: Read
 {
     fn finalise(self) -> Result<(), Error> {
@@ -166,7 +166,7 @@ where T: Read
     }
 }
 
-impl<T> Read for ChaChaPoly<T, DecryptorMode>
+impl<T> Read for XChaChaPoly<T, DecryptorMode>
 where
     T: Read,
 {
@@ -178,7 +178,7 @@ where
 
         if read_len > 0 {
             let raw_nonce= raw_buf.drain(..NONCE_SIZE).collect::<Vec<u8>>();
-            let nonce = Nonce::from_slice(&raw_nonce);
+            let nonce = XNonce::from_slice(&raw_nonce);
 
             match self.cipher.decrypt(
                 nonce,
