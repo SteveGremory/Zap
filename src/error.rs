@@ -309,6 +309,22 @@ pub enum PipelineDecompressionError {
     EncryptionError(EncryptionError),
     #[error(transparent)]
     EncryptionSecretError(EncryptionSecretError),
+    #[error(transparent)]
+    DecryptorInitError(EncryptorInitError),
+    #[error(transparent)]
+    CompressionInitError(CompressorInitError),
+}
+
+impl From<CompressorInitError> for PipelineDecompressionError {
+    fn from(value: CompressorInitError) -> Self {
+        PipelineDecompressionError::CompressionInitError(value)
+    }
+}
+
+impl From<EncryptorInitError> for PipelineDecompressionError {
+    fn from(value: EncryptorInitError) -> Self {
+        PipelineDecompressionError::DecryptorInitError(value)
+    }
 }
 
 impl From<EncryptionSecretError> for PipelineDecompressionError {

@@ -46,11 +46,23 @@ pub enum EncryptionSecret {
     Key(String),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
 pub enum EncryptionType {
     #[default]
     Passthrough,
     XChaCha,
     AesGcm,
     ChaCha,
+}
+
+impl From<String> for EncryptionType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "passthrough" => Self::Passthrough,
+            "xchacha" => Self::XChaCha,
+            "aesgcm" => Self::AesGcm,
+            "chacha" => Self::ChaCha,
+            _ => Self::Passthrough,
+        }
+    }
 }

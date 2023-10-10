@@ -1,3 +1,4 @@
+mod compression;
 mod encryption;
 mod logging;
 mod password;
@@ -10,19 +11,18 @@ use std::{
 use clap::{Parser, Subcommand};
 
 use log::info;
-use zap::{
-    encryption::EncryptionSecret,
-    error::{EncryptionKeyError, EncryptionSecretError, ZapError},
-};
+use zap::{encryption::EncryptionSecret, error::ZapError};
 
 use zapf::{pack_files, unpack_files};
 
-use crate::cli_util::{
-    logging::init_logger,
-    password::{get_password_confirm, get_password_noconf},
-};
+use crate::cli_util::{logging::init_logger, password::get_password_confirm};
 
-use self::{encryption::SecretType, logging::Verbosity};
+use self::{
+    compression::{BinCompressionType, CompressionLevel},
+    encryption::BinEncryptionType,
+    logging::Verbosity,
+    password::get_password_noconf,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -49,31 +49,32 @@ enum Command {
         input: String,
         /// Output file
         output: String,
-
-        /// Whether to encrypt the data
-        #[arg(short, long)]
-        encryption: Option<SecretType>,
         /// If SecretType is key then keypath must be provided
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
         verbosity: Verbosity,
+        #[arg(long, short, default_value = "passthrough")]
+        encryption_algorithm: BinEncryptionType,
+        #[arg(long, short, default_value = "passthrough")]
+        compression_algorithm: BinCompressionType,
+        #[arg(long, default_value = "fastest")]
+        compression_level: CompressionLevel,
     },
     Extract {
         /// Input file
         input: String,
-
         /// Output folder
         output: String,
-
-        /// Whether to encrypt the data
-        #[arg(short, long)]
-        encryption: Option<SecretType>,
         /// If SecretType is key then keypath must be provided
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
         verbosity: Verbosity,
+        #[arg(long, short, default_value = "passthrough")]
+        encryption_algorithm: BinEncryptionType,
+        #[arg(long, short, default_value = "passthrough")]
+        compression_algorithm: BinCompressionType,
     },
     List {
         archive: String,
@@ -88,17 +89,35 @@ impl Command {
             Command::Archive {
                 input,
                 output,
-                encryption,
                 keypath,
                 verbosity,
-            } => Self::archive(input, output, encryption, keypath, verbosity),
+                encryption_algorithm,
+                compression_algorithm,
+                compression_level,
+            } => Self::archive(
+                input,
+                output,
+                keypath,
+                verbosity,
+                encryption_algorithm,
+                compression_algorithm,
+                compression_level,
+            ),
             Command::Extract {
                 input,
                 output,
-                encryption,
                 keypath,
                 verbosity,
-            } => Self::extract(input, output, encryption, keypath, verbosity),
+                encryption_algorithm,
+                compression_algorithm,
+            } => Self::extract(
+                input,
+                output,
+                keypath,
+                verbosity,
+                encryption_algorithm,
+                compression_algorithm,
+            ),
             Command::List { archive, verbosity } => Self::list(archive, verbosity),
         }
     }
@@ -106,34 +125,35 @@ impl Command {
     fn archive(
         input: String,
         output: String,
-        encryption: Option<SecretType>,
         keypath: Option<String>,
         verbosity: Verbosity,
+        encryption_algorithm: BinEncryptionType,
+        compression_algorithm: BinCompressionType,
+        compression_level: CompressionLevel,
     ) -> Result<(), ZapError> {
         preamble(verbosity)?;
 
-        let enc: Option<EncryptionSecret> = match encryption {
-            Some(inner) => match inner {
-                SecretType::Password => Some(EncryptionSecret::Password(
-                    match get_password_confirm(256) {
-                        Ok(pass) => pass,
-                        Err(e) => return Err(e.into()),
-                    },
-                )),
-                SecretType::Key => match keypath {
-                    Some(path) => Some(EncryptionSecret::Key(path)),
-                    None => {
-                        return Err(EncryptionSecretError::Key(
-                            EncryptionKeyError::KeyfileNotProvided,
-                        )
-                        .into())
-                    }
-                },
-            },
-            None => None,
+        let encryption_secret: EncryptionSecret = match (&encryption_algorithm, keypath) {
+            (BinEncryptionType::Passthrough, _) => EncryptionSecret::None,
+            (_, Some(path)) => EncryptionSecret::Key(path),
+            (_, None) => EncryptionSecret::Password(match get_password_confirm(256) {
+                Ok(pass) => pass,
+                Err(e) => return Err(e.into()),
+            }),
         };
 
-        zap::compress_directory(&input, "/tmp/unpacked", enc)?;
+        info!("Encryption: {:?}", encryption_algorithm);
+        info!("Compression: {:?}", compression_algorithm);
+
+        zap::compress_directory(
+            &input,
+            "/tmp/unpacked",
+            encryption_algorithm.into(),
+            encryption_secret,
+            compression_algorithm.into(),
+            compression_level.into(),
+            zap::signing::SigningType::default(),
+        )?;
 
         let out_file = File::create(output).expect("Could not create file");
 
@@ -147,38 +167,34 @@ impl Command {
     fn extract(
         input: String,
         output: String,
-        decryption: Option<SecretType>,
         keypath: Option<String>,
         verbosity: Verbosity,
+        encryption_algorithm: BinEncryptionType,
+        compression_algorithm: BinCompressionType,
     ) -> Result<(), ZapError> {
         preamble(verbosity)?;
 
-        let enc: Option<EncryptionSecret> = match decryption {
-            Some(inner) => match inner {
-                SecretType::Password => {
-                    Some(EncryptionSecret::Password(match get_password_noconf(256) {
-                        Ok(pass) => pass,
-                        Err(e) => return Err(e.into()),
-                    }))
-                }
-                SecretType::Key => match keypath {
-                    Some(path) => Some(EncryptionSecret::Key(path)),
-                    None => {
-                        return Err(EncryptionSecretError::Key(
-                            EncryptionKeyError::KeyfileNotProvided,
-                        )
-                        .into())
-                    }
-                },
-            },
-            None => None,
+        let encryption_secret: EncryptionSecret = match (&encryption_algorithm, keypath) {
+            (BinEncryptionType::Passthrough, _) => EncryptionSecret::None,
+            (_, None) => EncryptionSecret::Password(match get_password_noconf(256) {
+                Ok(pass) => pass,
+                Err(e) => return Err(e.into()),
+            }),
+            (_, Some(path)) => EncryptionSecret::Key(path),
         };
 
         // Need to check if this function validates path names
         // to prevent directory traversal.
         unpack_files(input, "/tmp/unpacked")?;
 
-        zap::decompress_directory("/tmp/unpacked", &output, enc)?;
+        zap::decompress_directory(
+            "/tmp/unpacked",
+            &output,
+            encryption_algorithm.into(),
+            encryption_secret,
+            compression_algorithm.into(),
+            zap::signing::SigningType::default(),
+        )?;
 
         Ok(fs::remove_dir_all("/tmp/unpacked")?)
         //Ok(())

@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::{copy, Read, Write},
-    path::PathBuf, backtrace,
+    path::PathBuf, sync::Arc,
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     encryption::{
         aes_gcm_256::AesGcmAlgorithm, chachapoly::ChaChaPolyAlgorithm,
         passthrough::{EncryptorPassthrough, DecryptorPassthrough}, xchachapoly::XChaChaPolyAlgorithm, DecryptionAlgorithm,
-        EncryptionAlgorithm, EncryptionModule, EncryptionSecret, EncryptionType, self, DecryptionModule,
+        EncryptionAlgorithm, EncryptionModule, EncryptionSecret, EncryptionType, DecryptionModule,
     },
     error::{PipelineBuildError, PipelineCompressionError, PipelineDecompressionError},
     signing::{
@@ -20,41 +20,83 @@ use crate::{
     },
 };
 
-pub struct PipeLineConfig {
-    encryption: EncryptionType,
-    encryption_secret: EncryptionSecret,
-    compression: CompressionType,
-    compression_level: flate2::Compression,
-    signing: SigningType,
+#[derive(Default)]
+pub struct ProcessingPipeline {
+    encryption: Arc<EncryptionType>,
+    encryption_secret: Arc<EncryptionSecret>,
+    compression: Arc<CompressionType>,
+    compression_level: Arc<flate2::Compression>,
+    signing: Arc<SigningType>,
     source: PathBuf,
     destination: PathBuf,
 }
 
-impl PipeLineConfig {
+impl ProcessingPipeline {
+    pub fn new() -> ProcessingPipeline {
+        ProcessingPipeline::default()
+    }
+
+    pub fn with_encryption(mut self, encryption: Arc<EncryptionType>) -> Self {
+        self.encryption = encryption;
+        self
+    }
+
+    pub fn with_encryption_secret(mut self, encryption_secret: Arc<EncryptionSecret>) -> Self {
+        self.encryption_secret = encryption_secret;
+        self
+    }
+
+    pub fn with_compression(mut self, compression: Arc<CompressionType>) -> Self {
+        self.compression = compression;
+        self
+    }
+
+    pub fn with_compression_level(mut self, compression_level: Arc<flate2::Compression>) -> Self {
+        self.compression_level = compression_level;
+        self
+    }
+
+    pub fn with_signing(mut self, signing: Arc<SigningType>) -> Self {
+        self.signing = signing;
+        self
+    }
+
+    pub fn with_source(mut self, source: PathBuf) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn with_destination(mut self, destination: PathBuf) -> Self {
+        self.destination = destination;
+        self
+    }
+
     pub fn compress_dir(self) -> Result<(), PipelineCompressionError> {
-        let mut io = File::open(&self.source)?;
+        let io = File::create(&self.destination)?;
 
         self.build_encryptor(io)
     }
 
     pub fn decompress_dir(self) -> Result<(), PipelineDecompressionError> {
-        Ok(())
+        let io = File::open(&self.source)?;
+
+        self.build_dencryptor(io)
     }
 
-    pub fn build_encryptor<T>(mut self, io: T) -> Result<(), PipelineCompressionError> 
+    pub fn build_encryptor<T>(self, io: T) -> Result<(), PipelineCompressionError> 
     where
         T: Write,
     {
-        let encryption_secret = self.encryption_secret.clone(); // TODO: Try to get rid of this clone...
+        let encryption_secret = (*self.encryption_secret).clone(); // TODO: Try to get rid of this clone...
 
         match encryption_secret {
-            EncryptionSecret::Password(p) => match self.encryption {
+            EncryptionSecret::Password(p) => match *self.encryption {
                 EncryptionType::XChaCha => self.build_compressor(XChaChaPolyAlgorithm::new().with_key(p).encryptor(io)?),
                 EncryptionType::ChaCha => self.build_compressor(ChaChaPolyAlgorithm::new().with_key(p).encryptor(io)?),
                 EncryptionType::AesGcm => self.build_compressor(AesGcmAlgorithm::new().with_key(p).encryptor(io)?),
                 EncryptionType::Passthrough => self.build_compressor(EncryptorPassthrough::from(io)),
             },
-            EncryptionSecret::Key(k) => {
+            EncryptionSecret::Key(_) => {
                 unimplemented!("Key encryption not yet implemented")
             }
             EncryptionSecret::None => self.build_compressor(EncryptorPassthrough::from(io)),
@@ -65,27 +107,25 @@ impl PipeLineConfig {
     where
         T: EncryptionModule,
     {
-        let compression_level = self.compression_level.clone(); // TODO: Try to get rid of this clone...
+        let compression_level = *self.compression_level; // TODO: Try to get rid of this copy...
 
-        match self.compression {
+        match *self.compression {
             CompressionType::Lz4 => self.build_signer(Lz4Algorithm::new().compressor(io)?),
             CompressionType::Gzip => self.build_signer(
                 GzipAlgorithm::with_compression_level(compression_level).compressor(io)?,
             ),
             CompressionType::Snappy => self.build_signer(SnappyAlgorithm::new().compressor(io)?),
             CompressionType::Passthrough => self.build_signer(PassthroughAlgorithm::new().compressor(io)?),
-        };
-
-        Ok(())
+        }
     }
 
     pub fn build_signer<T>(&self, io: T) -> Result<(), PipelineCompressionError> 
     where
         T: Compress,
     {
-        match self.signing {
+        match *self.signing {
             SigningType::Passthrough => {
-                let pipeline = TaskPipeline::from_writer(SignerPassthrough::from(io));
+                let pipeline = PipelineTask::from_writer(SignerPassthrough::from(io));
                 self.execute_compression_pipeline(pipeline)
             }
         }
@@ -98,130 +138,69 @@ impl PipeLineConfig {
         let mut source = File::open(&self.source)?;
 
         match pipeline.compress(&mut source) {
-                // TODO: Return ok
-            Ok(_) => log::debug!(
-                "Finished compressing '{:?}' successfully",
-                self.source.display()
-            ),
-            // TODO: Return error instead of panicking
-            Err(e) => {
-
-
-                let bt = backtrace::Backtrace::capture();
-                log::error!(
-                    "Error while compressing '{}': {:?}",
-                    self.source.display(),
-                    e
-                );
-                log::trace!(
-                    "Error while compressing '{}': {:?}",
-                    self.source.display(),
-                    bt
-                );
-                panic!();
-            }
+            Ok(_) => Ok(()),
+            Err(e) => Err(e)
         }
-
-        Ok(())
     }
 
-    pub fn build_dencryptor<T>(mut self, io: T) -> Result<(), PipelineCompressionError> 
+    pub fn build_dencryptor<T>(self, io: T) -> Result<(), PipelineDecompressionError> 
     where
         T: Read,
     {
-        let encryption_secret = self.encryption_secret.clone(); // TODO: Try to get rid of this clone...
+        let encryption_secret = (*self.encryption_secret).clone(); // TODO: Try to get rid of this clone...
 
         match encryption_secret {
-            EncryptionSecret::Password(p) => match self.encryption {
+            EncryptionSecret::Password(p) => match *self.encryption {
                 EncryptionType::XChaCha => self.build_decompressor(XChaChaPolyAlgorithm::new().with_key(p).decryptor(io)?),
                 EncryptionType::ChaCha => self.build_decompressor(ChaChaPolyAlgorithm::new().with_key(p).decryptor(io)?),
                 EncryptionType::AesGcm => self.build_decompressor(AesGcmAlgorithm::new().with_key(p).decryptor(io)?),
                 EncryptionType::Passthrough => self.build_decompressor(DecryptorPassthrough::from(io)),
             },
-            EncryptionSecret::Key(k) => {
+            EncryptionSecret::Key(_) => {
                 unimplemented!("Key encryption not yet implemented")
             }
             EncryptionSecret::None => self.build_decompressor(DecryptorPassthrough::from(io)),
         }
     }
 
-    pub fn build_decompressor<T>(&self, io: T) -> Result<(), PipelineCompressionError>
+    pub fn build_decompressor<T>(&self, io: T) -> Result<(), PipelineDecompressionError>
     where
         T: DecryptionModule,
     {
-        let compression_level = self.compression_level.clone(); // TODO: Try to get rid of this clone...
+        let compression_level = *self.compression_level; // TODO: Try to get rid of this copy...
 
-        match self.compression {
+        match *self.compression {
             CompressionType::Lz4 => self.build_verifier(Lz4Algorithm::new().decompressor(io)?),
             CompressionType::Gzip => self.build_verifier(
                 GzipAlgorithm::with_compression_level(compression_level).decompressor(io)?,
             ),
             CompressionType::Snappy => self.build_verifier(SnappyAlgorithm::new().decompressor(io)?),
             CompressionType::Passthrough => self.build_verifier(PassthroughAlgorithm::new().decompressor(io)?),
-        };
-
-        Ok(())
+        }
     }
 
-    pub fn build_verifier<T>(&self, io: T) -> Result<(), PipelineCompressionError> 
+    pub fn build_verifier<T>(&self, io: T) -> Result<(), PipelineDecompressionError> 
     where
         T: Decompress,
     {
-        match self.signing {
+        match *self.signing {
             SigningType::Passthrough => {
-                let pipeline = TaskPipeline::from_reader(VerifierPassthrough::from(io));
+                let pipeline = PipelineTask::from_reader(VerifierPassthrough::from(io));
                 self.execute_decompression_pipeline(pipeline)
             }
         }
     }
 
-    fn execute_decompression_pipeline<T>(&self, pipeline: T) -> Result<(), PipelineCompressionError> 
+    fn execute_decompression_pipeline<T>(&self, pipeline: T) -> Result<(), PipelineDecompressionError> 
     where 
         T: DecompressionPipeline,
     {
-        let mut source = File::open(&self.source)?;
+        let mut destination = File::create(&self.destination)?;
 
-        match pipeline.decompress(&mut source) {
-                // TODO: Return ok
-            Ok(_) => log::debug!(
-                "Finished compressing '{:?}' successfully",
-                self.source.display()
-            ),
-            // TODO: Return error instead of panicking
-            Err(e) => {
-
-
-                let bt = backtrace::Backtrace::capture();
-                log::error!(
-                    "Error while compressing '{}': {:?}",
-                    self.source.display(),
-                    e
-                );
-                log::trace!(
-                    "Error while compressing '{}': {:?}",
-                    self.source.display(),
-                    bt
-                );
-                panic!();
-            }
+        match pipeline.decompress(&mut destination) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e)
         }
-
-        Ok(())
-    }
-}
-
-impl Default for PipeLineConfig {
-    fn default() -> Self {
-        PipeLineConfig {
-            encryption: EncryptionType::default(),
-            encryption_secret: EncryptionSecret::default(),
-            compression: CompressionType::default(),
-            compression_level: flate2::Compression::default(),
-            signing: SigningType::default(),
-            source: PathBuf::default(),
-            destination: PathBuf::default(),
-        }
-        
     }
 }
 
@@ -237,31 +216,31 @@ pub trait DecompressionPipeline {
         F: Write;
 }
 
-pub struct TaskPipeline<T> {
+pub struct PipelineTask<T> {
     inner: T,
 }
 
-impl TaskPipeline<()> {
+impl PipelineTask<()> {
     pub fn builder() -> TaskPipelineBuilder<(), (), (), ()> {
         TaskPipelineBuilder::new()
     }
 
-    pub fn from_writer<U>(io: U) -> TaskPipeline<U>
+    pub fn from_writer<U>(io: U) -> PipelineTask<U>
     where
         U: Write,
     {
-        TaskPipeline { inner: io }
+        PipelineTask { inner: io }
     }
 
-    pub fn from_reader<U>(io: U) -> TaskPipeline<U>
+    pub fn from_reader<U>(io: U) -> PipelineTask<U>
     where
         U: Read,
     {
-        TaskPipeline { inner: io }
+        PipelineTask { inner: io }
     }
 }
 
-impl<T> CompressionPipeline for TaskPipeline<T>
+impl<T> CompressionPipeline for PipelineTask<T>
 where
     T: Sign,
 {
@@ -274,7 +253,7 @@ where
     }
 }
 
-impl<T> DecompressionPipeline for TaskPipeline<T>
+impl<T> DecompressionPipeline for PipelineTask<T>
 where
     T: Verify,
 {
@@ -361,8 +340,8 @@ where
     C: CompressionAlgorithm<E::Encryptor>,
     S: SignerMethod<C::Compressor>,
 {
-    pub fn compression_pipeline(self) -> Result<TaskPipeline<S::Signer>, PipelineBuildError> {
-        Ok(TaskPipeline {
+    pub fn compression_pipeline(self) -> Result<PipelineTask<S::Signer>, PipelineBuildError> {
+        Ok(PipelineTask {
             inner: self.signing.signer(
                 self.compression
                     .compressor(self.encryption.encryptor(self.io)?)?,
@@ -378,8 +357,8 @@ where
     C: DecompressionAlgorithm<E::Decryptor>,
     S: VerifierMethod<C::Decompressor>,
 {
-    pub fn decompression_pipeline(self) -> Result<TaskPipeline<S::Verifier>, PipelineBuildError> {
-        Ok(TaskPipeline {
+    pub fn decompression_pipeline(self) -> Result<PipelineTask<S::Verifier>, PipelineBuildError> {
+        Ok(PipelineTask {
             inner: self.signing.verifier(
                 self.compression
                     .decompressor(self.encryption.decryptor(self.io)?)?,

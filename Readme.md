@@ -16,7 +16,7 @@ To install Zap, run the following command from the project root:
 
 Where the `[OUTPUT]` is the path to which you want to store the `.zap` file.
 
--   The zap file can optionally be encrypted with by providing the `-e` flag and choosing `password` or `key`. Note that `key` method is not supported yet.
+Using `zap archive --help` will list the available options for encryption and compression.
 
 ### In order to **decompress** a Zap archive
 
@@ -24,7 +24,9 @@ Where the `[OUTPUT]` is the path to which you want to store the `.zap` file.
 
 Where the `[ARCHIVE]` is the path to the file which you want to extract and the `[OUTPUT]` is the folder in which you want the contents to be placed inside.
 
--   If the Zap file was encrypted, the `-e` flag needs to be provided along with the correct encryption method. *This will hopefully be resolved in future versions*
+Using `zap archive --help` will list the available options for encryption and compression.
+
+Unfortunately, in it's current state, that compression and encryption methods aren't stored in metadata and must be given when extracting. this will be fixed in coming releases.
 
 ### In order to **list** the contents of a Zap archive
 
