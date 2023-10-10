@@ -2,6 +2,8 @@ use rayon::ThreadPoolBuildError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ZapError {
+    #[error("{0}")]
+    NotImplemented(String),
     #[error("Generic Error: {0}")]
     Generic(String),
     #[error(transparent)]

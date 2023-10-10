@@ -44,38 +44,60 @@ impl Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Archive a folder 
     Archive {
         /// Input folder
         input: String,
         /// Output file
         output: String,
-        /// If SecretType is key then keypath must be provided
+        /// Encrypt using default algorithm (XChaChaPoly1305)
+        #[arg(short, long)]
+        encrypt: bool,
+        /// Compress using default algorithm (Lz4)
+        #[arg(short, long)]
+        compress: bool,
+        /// Path to private key file (not currently supported)
         #[arg(short, long)]
         keypath: Option<String>,
+        /// Output verbosity
         #[arg(short, long, default_value = "normal")]
         verbosity: Verbosity,
-        #[arg(long, short, default_value = "passthrough")]
+        /// Override encryption algorithm used
+        #[arg(long, default_value = "passthrough")]
         encryption_algorithm: BinEncryptionType,
-        #[arg(long, short, default_value = "passthrough")]
+        /// Override compression algorithm used
+        #[arg(long, default_value = "passthrough")]
         compression_algorithm: BinCompressionType,
+        /// Compression level when using [--compression_algorithm gzip]
         #[arg(long, default_value = "fastest")]
         compression_level: CompressionLevel,
     },
+    /// Extract an archive
     Extract {
         /// Input file
         input: String,
         /// Output folder
         output: String,
-        /// If SecretType is key then keypath must be provided
+        #[arg(short, long)]
+        /// Decrypt using default algorithm (XChaChaPoly1305)
+        encrypt: bool,
+        #[arg(short, long)]
+        /// Decompress using default algorithm (Lz4)
+        compress: bool,
+        /// Path to private key file (not currently supported)
         #[arg(short, long)]
         keypath: Option<String>,
+        /// Output verbosity
         #[arg(short, long, default_value = "normal")]
         verbosity: Verbosity,
-        #[arg(long, short, default_value = "passthrough")]
+        /// Override encryption algorithm used
+        #[arg(long, default_value = "passthrough")]
         encryption_algorithm: BinEncryptionType,
-        #[arg(long, short, default_value = "passthrough")]
+        /// Override compression algorithm used
+        #[arg(long, default_value = "passthrough")]
         compression_algorithm: BinCompressionType,
     },
+    /// List contents of an archive
     List {
         archive: String,
         #[arg(short, long, default_value = "normal")]
@@ -89,35 +111,58 @@ impl Command {
             Command::Archive {
                 input,
                 output,
+                encrypt: encryption,
+                compress: compression,
                 keypath,
                 verbosity,
-                encryption_algorithm,
-                compression_algorithm,
+                mut encryption_algorithm,
+                mut compression_algorithm,
                 compression_level,
-            } => Self::archive(
-                input,
-                output,
-                keypath,
-                verbosity,
-                encryption_algorithm,
-                compression_algorithm,
-                compression_level,
-            ),
+            } => {
+                if let (true, BinEncryptionType::Passthrough) = (encryption, &encryption_algorithm) {
+                    encryption_algorithm = BinEncryptionType::XChaCha;
+                }
+
+                if let (true, BinCompressionType::Passthrough) = (compression, &compression_algorithm) {
+                    compression_algorithm = BinCompressionType::Lz4;
+                }
+
+                Self::archive(
+                    input,
+                    output,
+                    keypath,
+                    verbosity,
+                    encryption_algorithm,
+                    compression_algorithm,
+                    compression_level,
+                )
+            },
             Command::Extract {
                 input,
                 output,
+                encrypt: encryption,
+                compress: compression,
                 keypath,
                 verbosity,
-                encryption_algorithm,
-                compression_algorithm,
-            } => Self::extract(
-                input,
-                output,
-                keypath,
-                verbosity,
-                encryption_algorithm,
-                compression_algorithm,
-            ),
+                mut encryption_algorithm,
+                mut compression_algorithm,
+            } => {
+                if let (true, BinEncryptionType::Passthrough) = (encryption, &encryption_algorithm) {
+                    encryption_algorithm = BinEncryptionType::XChaCha;
+                }
+
+                if let (true, BinCompressionType::Passthrough) = (compression, &compression_algorithm) {
+                    compression_algorithm = BinCompressionType::Lz4;
+                }
+                Self::extract(
+                    input,
+                    output,
+                    keypath,
+                    verbosity,
+                    encryption_algorithm,
+                    compression_algorithm,
+                )
+            },
             Command::List { archive, verbosity } => Self::list(archive, verbosity),
         }
     }
@@ -205,7 +250,7 @@ impl Command {
 
         info!("Listing archive: {}", archive);
 
-        unimplemented!("Archive listing not yet implemented");
+        Err(ZapError::NotImplemented("Archive listing not yet implemented.".into()))
     }
 }
 
