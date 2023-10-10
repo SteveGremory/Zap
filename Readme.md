@@ -1,7 +1,7 @@
 # Zap
 
 Compress and/or encrypt folders fast. Like, really fast.
-or as some say, **blazingly** fast.
+or as some say... **blazingly** fast.
 
 ## Installation
 
@@ -12,19 +12,35 @@ To install Zap, run the following command from the project root:
 
 ### In order to **compress** a folder with Zap, run:
 
-`zap FOLDER_TO_ZAP PATH_TO_ZAP_FILE`
+`zap archive [INPUT] [OUTPUT]`
 
-Where the `PATH_TO_ZAP_FILE` is the path to which you wanna store the `.zap` file.
+Where the `[OUTPUT]` is the path to which you want to store the `.zap` file. Eg:
 
--   The zap file can optionally be encrypted with by providing the `-e` flag. A `keyfile.zk` containing the "password" (keys) will be generated in the current folder.
+```
+zap archive /path/to/dir ./dir.zap -ce
+```
 
-### In order to **decompress** a folder with Zap
+Using `zap archive --help` will list the available options for encryption and compression.
 
-`zap PATH_TO_ZAP_FILE FOLDER_TO_UNZAP_INTO`
+### In order to **decompress** a Zap archive
 
-Where the `PATH_TO_ZAP_FILE` is the path to the file which you wanna unzap and the `FOLDER_TO_UNZAP_INTO` is the folder in which you want the contents to be placed inside.
+`zap extract [ARCHIVE] [OUTPUT]`
 
--   If the Zap file was encrypted, the `-e` flag needs to be provided along with the `keyfile.zk` which was generated upon zapping.
+Where the `[ARCHIVE]` is the path to the file which you want to extract and the `[OUTPUT]` is the folder in which you want the contents to be placed inside.
+
+Using `zap archive --help` will list the available options for encryption and compression.
+
+```
+zap extract ./dir.zap ./dir -ce
+```
+
+Unfortunately, in it's current state, that compression and encryption methods aren't stored in metadata and must be given when extracting. this will be fixed in coming releases.
+
+### In order to **list** the contents of a Zap archive
+
+`zap list [ARCHIVE]`
+
+*coming soon*
 
 ## License
 

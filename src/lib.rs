@@ -1,31 +1,55 @@
 pub mod compression;
 pub mod encryption;
+pub mod error;
 pub mod internal;
+pub mod pipeline;
+pub mod prelude;
 pub mod signing;
 
 use std::{
-    fs::{self},
-    io::{self},
-    path,
+    backtrace,
+    path::{self, Path, PathBuf},
+    sync::Arc,
 };
 
-use compression::{compress, decompress, algorithms::lz4_decoder};
-use encryption::{algorithm::{aes256, aes256_r,encryption_passthrough, decryption_passthrough}};
-use internal::{bind_io_constructors};
-use signing::signers::{signer_passthrough, verifier_passthrough};
+use crate::pipeline::ProcessingPipeline;
+use compression::CompressionType;
+use crossbeam::sync::WaitGroup;
+use encryption::{EncryptionSecret, EncryptionType};
+use error::{CompressionError, DecompressionError};
+use log::{debug, error};
+use rayon::ThreadPoolBuilder;
+use signing::SigningType;
 use walkdir::WalkDir;
-use crate::compression::algorithms::lz4_encoder;
 
-pub async fn compress_directory(
+pub struct Processor {}
+
+pub fn compress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
-    pass: Option<Vec<u8>>
-) -> io::Result<()> 
-{
-    let mut task_list = Vec::with_capacity(800);
+    encryption: EncryptionType,
+    encryption_secret: EncryptionSecret,
+    compression: CompressionType,
+    compression_level: flate2::Compression,
+    signing: SigningType,
+) -> Result<(), CompressionError> {
+    let avail_thread: usize = std::thread::available_parallelism()?.into();
+
+    debug!("Building thread pool with {} threads", avail_thread);
+
+    let thread_pool = ThreadPoolBuilder::new().num_threads(avail_thread).build()?;
+
+    let wg = WaitGroup::new();
+
+    let encryption_ref = Arc::new(encryption);
+    let compression_ref = Arc::new(compression);
+    let compression_level_ref = Arc::new(compression_level);
+    let signing_ref = Arc::new(signing);
+    let encryption_secret_ref = Arc::new(encryption_secret);
 
     for entry in WalkDir::new(input_folder_path) {
         let entry = entry?;
+
         let entry_path = entry.into_path();
 
         // Skip if it's a dir
@@ -33,76 +57,113 @@ pub async fn compress_directory(
             continue;
         }
 
-        // Ignore the keyfile
+        // Ignore the keyfile TODO
         if entry_path.as_os_str() == "keyfile.zk" {
             continue;
         }
 
-        let parent_path = entry_path.strip_prefix(input_folder_path).unwrap();
-        let output_path =
-            path::Path::new(output_folder_path).join(parent_path.with_extension(format!(
-                "{}.lz4",
-                parent_path
-                    .extension()
-                    .unwrap_or_default()
-                    .to_str()
-                    .unwrap_or_default()
-        )));
+        let parent_path = match entry_path.strip_prefix(input_folder_path) {
+            Ok(p) => p,
+            Err(e) => panic!("Error: {:?}", e), // TODO: Graceful cleanup
+        };
+
+        let output_path = path::Path::new(output_folder_path).join(rewrite_ext(parent_path));
+
+        debug!(
+            "Compressing: {:?} -> {:?}",
+            entry_path.display(),
+            output_path.display()
+        );
 
         let current_dir = output_path.parent().unwrap();
 
         std::fs::create_dir_all(current_dir)
             .expect("Failed to create all the required directories/subdirectories");
 
-        let psk = pass.clone();
-        // Currently each task binds it's own constructor, this is obviously
-        // very inefficient but Box<dyn Fn ...> aren't thread safe
-        // so one cannot pass them over thread boundaries.
-        // Maybe if we add the ability to hot-swap the underlying writer so that it is created once
-        // we can save initialisation and binding, but that will be later.
-        task_list.push(
-            tokio::spawn(async move {
-                let writer = bind_io_constructors(
-                    match psk {
-                        Some(psk) => {
-                            aes256(
-                                psk.clone(),
-                                vec![0u8;32]
-                            )
-                        },
-                        None => {
-                            encryption_passthrough()
-                        }
-                    },
-                    lz4_encoder, 
-                    signer_passthrough
-                );
+        let encryption_secret_ref = encryption_secret_ref.clone();
+        let encryption_ref = encryption_ref.clone();
+        let compression_ref = compression_ref.clone();
+        let compression_level_ref = compression_level_ref.clone();
+        let signing_ref = signing_ref.clone();
 
-                compress(
-                    fs::File::open(entry_path).expect("Failed to open input file"),
-                    writer(fs::File::create(output_path))
-                )
-            })
-        )
+        let wg_ref = wg.clone();
+
+        thread_pool.spawn(move || {
+            let result = std::panic::catch_unwind(|| {
+                let pipeline = ProcessingPipeline::new()
+                    .with_source(entry_path.clone())
+                    .with_destination(output_path.clone())
+                    .with_compression(compression_ref)
+                    .with_compression_level(compression_level_ref)
+                    .with_encryption(encryption_ref)
+                    .with_encryption_secret(encryption_secret_ref)
+                    .with_signing(signing_ref);
+
+                match pipeline.compress_dir() {
+                    Ok(_) => debug!(
+                        "Finished compressing '{:?}' successfully",
+                        entry_path.display()
+                    ),
+                    Err(e) => {
+                        let bt = backtrace::Backtrace::capture();
+                        error!(
+                            "Error while compressing '{}': {:?}",
+                            entry_path.display(),
+                            e
+                        );
+                        log::trace!(
+                            "Error while compressing '{}': {:?}",
+                            entry_path.display(),
+                            bt
+                        );
+                        panic!();
+                    }
+                };
+
+                drop(wg_ref);
+            });
+
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+                    log::trace!(
+                        "Thread panicked while handling file: {:?}\nMessage: {:?}",
+                        entry_path.display(),
+                        e
+                    );
+                }
+            }
+        });
     }
 
-    for val in task_list.into_iter() {
-        val.await.err();
-    }
+    wg.wait();
 
     Ok(())
 }
 
 // todo: This function will alter the filename of binary files eg:
 // a binary called 'someBinary' will end up as 'someBinary.'
-pub async fn decompress_directory(
+pub fn decompress_directory(
     input_folder_path: &str,
     output_folder_path: &str,
-    pass: Option<Vec<u8>>
-) -> io::Result<()>
-{
-    let mut task_list = Vec::with_capacity(800);
-    
+    encryption: EncryptionType,
+    encryption_secret: EncryptionSecret,
+    compression: CompressionType,
+    signing: SigningType,
+) -> Result<(), DecompressionError> {
+    let avail_thread: usize = std::thread::available_parallelism()?.into();
+
+    debug!("Building thread pool with {} threads", avail_thread);
+
+    let thread_pool = ThreadPoolBuilder::new().num_threads(avail_thread).build()?;
+
+    let wg = WaitGroup::new();
+
+    let encryption_ref = Arc::new(encryption);
+    let compression_ref = Arc::new(compression);
+    let signing_ref = Arc::new(signing);
+    let encryption_secret_ref = Arc::new(encryption_secret);
+
     for entry in WalkDir::new(input_folder_path) {
         let entry = entry.unwrap();
         let entry_path = entry.into_path();
@@ -114,51 +175,87 @@ pub async fn decompress_directory(
         if entry_path == path::Path::new("keyfile.zk") {
             continue;
         }
-        
+
         if entry_path.extension().unwrap_or_default() == "lz4" {
             let parent_path = entry_path.strip_prefix(input_folder_path).unwrap();
 
             let output_path =
                 path::Path::new(output_folder_path).join(parent_path.with_extension(""));
 
+            debug!(
+                "Decompressing: {:?} -> {:?}",
+                entry_path.display(),
+                output_path.display()
+            );
+
             let current_dir = output_path.parent().unwrap();
 
             std::fs::create_dir_all(current_dir)
                 .expect("Failed to create all the required directories/subdirectories");
 
-            let psk = pass.clone();
-            task_list.push(
-                tokio::spawn(async move {
-                    let reader = bind_io_constructors(
-                        match psk {
-                            Some(psk) => {
-                                aes256_r(
-                                    psk.clone(),
-                                    vec![0u8;32]
-                                )
-                            },
-                            None => {
-                                decryption_passthrough()
-                            }
-                        },
-                        lz4_decoder, 
-                        verifier_passthrough
-                    );
-    
-                    decompress(
-                        reader(
-                            fs::File::open(entry_path)
+            let encryption_secret_ref = encryption_secret_ref.clone();
+            let encryption_ref = encryption_ref.clone();
+            let compression_ref = compression_ref.clone();
+            let signing_ref = signing_ref.clone();
+
+            let wg_ref = wg.clone();
+
+            thread_pool.spawn(move || {
+                let result = std::panic::catch_unwind(|| {
+                    let pipeline = ProcessingPipeline::new()
+                        .with_source(entry_path.clone())
+                        .with_destination(output_path.clone())
+                        .with_compression(compression_ref)
+                        .with_encryption(encryption_ref)
+                        .with_encryption_secret(encryption_secret_ref)
+                        .with_signing(signing_ref);
+
+                    match pipeline.decompress_dir() {
+                        Ok(_) => debug!(
+                            "Finished decompressing '{:?}' successfully",
+                            entry_path.display()
                         ),
-                        fs::File::create(output_path).expect("Failed to create file.")
-                    )
-                })
-            )
+                        Err(e) => {
+                            let bt = backtrace::Backtrace::capture();
+                            error!(
+                                "Error while decompressing '{}': {:?}",
+                                entry_path.display(),
+                                e
+                            );
+                            log::trace!(
+                                "Error while decompressing '{}': {:?}",
+                                entry_path.display(),
+                                bt
+                            );
+                            panic!();
+                        }
+                    };
+
+                    drop(wg_ref)
+                });
+
+                match result {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::trace!(
+                            "Thread panicked while handling file: {:?}\nMessage: {:?}",
+                            entry_path.display(),
+                            e
+                        );
+                    }
+                }
+            });
         }
     }
 
-    for val in task_list.into_iter() {
-        val.await.err();
-    }
+    wg.wait();
 
     Ok(())
+}
+
+fn rewrite_ext(path: &Path) -> PathBuf {
+    match path.extension() {
+        Some(ext) => path.with_extension(format!("{}.lz4", ext.to_str().unwrap())),
+        None => path.with_extension("lz4"),
+    }
 }
