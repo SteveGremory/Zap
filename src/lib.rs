@@ -14,18 +14,18 @@ use std::{
 };
 
 use crate::encryption::DecryptionAlgorithm;
-use compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm};
+use compression::{lz4::Lz4Algorithm, CompressionAlgorithm, DecompressionAlgorithm, CompressionType};
 use crossbeam::sync::WaitGroup;
 use encryption::{
     passthrough::{DecryptorPassthrough, EncryptorPassthrough},
     xchachapoly::XChaChaPolyAlgorithm,
-    EncryptionAlgorithm, EncryptionSecret,
+    EncryptionAlgorithm, EncryptionSecret, EncryptionType,
 };
 use error::{CompressionError, DecompressionError};
 use log::{error, debug};
 use pipeline::{CompressionPipeline, DecompressionPipeline};
 use rayon::ThreadPoolBuilder;
-use signing::passthrough::{SignerPassthrough, VerifierPassthrough};
+use signing::{passthrough::{SignerPassthrough, VerifierPassthrough}, SigningType};
 use walkdir::WalkDir;
 
 pub fn compress_directory(

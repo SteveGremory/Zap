@@ -1,4 +1,3 @@
-pub mod signers;
 pub mod passthrough;
 
 // External
@@ -53,4 +52,10 @@ where T: Decompress
     type Verifier: Verify;
 
     fn verifier(&self, reader: T) -> Result<Self::Verifier, SignerInitError>;
+}
+
+#[derive(Default)]
+pub enum SigningType {
+    #[default]
+    Passthrough,
 }

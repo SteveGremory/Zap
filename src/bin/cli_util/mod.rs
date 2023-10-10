@@ -22,7 +22,7 @@ use crate::cli_util::{
     password::{get_password_confirm, get_password_noconf},
 };
 
-use self::{encryption::EncryptionType, logging::Verbosity};
+use self::{encryption::SecretType, logging::Verbosity};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -52,8 +52,8 @@ enum Command {
 
         /// Whether to encrypt the data
         #[arg(short, long)]
-        encryption: Option<EncryptionType>,
-        /// If EncryptionType is key then keypath must be provided
+        encryption: Option<SecretType>,
+        /// If SecretType is key then keypath must be provided
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
@@ -68,8 +68,8 @@ enum Command {
 
         /// Whether to encrypt the data
         #[arg(short, long)]
-        encryption: Option<EncryptionType>,
-        /// If EncryptionType is key then keypath must be provided
+        encryption: Option<SecretType>,
+        /// If SecretType is key then keypath must be provided
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
@@ -106,7 +106,7 @@ impl Command {
     fn archive(
         input: String,
         output: String,
-        encryption: Option<EncryptionType>,
+        encryption: Option<SecretType>,
         keypath: Option<String>,
         verbosity: Verbosity,
     ) -> Result<(), ZapError> {
@@ -114,13 +114,13 @@ impl Command {
 
         let enc: Option<EncryptionSecret> = match encryption {
             Some(inner) => match inner {
-                EncryptionType::Password => Some(EncryptionSecret::Password(
+                SecretType::Password => Some(EncryptionSecret::Password(
                     match get_password_confirm(256) {
                         Ok(pass) => pass,
                         Err(e) => return Err(e.into()),
                     },
                 )),
-                EncryptionType::Key => match keypath {
+                SecretType::Key => match keypath {
                     Some(path) => Some(EncryptionSecret::Key(path)),
                     None => {
                         return Err(EncryptionSecretError::Key(
@@ -147,7 +147,7 @@ impl Command {
     fn extract(
         input: String,
         output: String,
-        decryption: Option<EncryptionType>,
+        decryption: Option<SecretType>,
         keypath: Option<String>,
         verbosity: Verbosity,
     ) -> Result<(), ZapError> {
@@ -155,13 +155,13 @@ impl Command {
 
         let enc: Option<EncryptionSecret> = match decryption {
             Some(inner) => match inner {
-                EncryptionType::Password => {
+                SecretType::Password => {
                     Some(EncryptionSecret::Password(match get_password_noconf(256) {
                         Ok(pass) => pass,
                         Err(e) => return Err(e.into()),
                     }))
                 }
-                EncryptionType::Key => match keypath {
+                SecretType::Key => match keypath {
                     Some(path) => Some(EncryptionSecret::Key(path)),
                     None => {
                         return Err(EncryptionSecretError::Key(

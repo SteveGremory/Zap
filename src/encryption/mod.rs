@@ -38,7 +38,19 @@ where
     fn decryptor(&self, reader: T) -> Result<Self::Decryptor, EncryptorInitError>;
 }
 
+#[derive(Default, Clone)]
 pub enum EncryptionSecret {
+    #[default]
+    None,
     Password(Vec<u8>),
     Key(String),
+}
+
+#[derive(Default)]
+pub enum EncryptionType {
+    #[default]
+    Passthrough,
+    XChaCha,
+    AesGcm,
+    ChaCha,
 }
