@@ -121,6 +121,8 @@ pub enum EncryptionKeyError
 pub enum PasswordError {
     #[error("Passwords do not match")]
     PasswordsDoNotMatch,
+    #[error("Password is empty")]
+    PasswordEmpty,
     #[error(transparent)]
     HashingError(HashingError),
     #[error(transparent)]
@@ -164,7 +166,15 @@ pub enum CompressionError {
     #[error("Failed to build thread pool: {0}")]
     FailedToBuildThreadPool(ThreadPoolBuildError),
     #[error("Failed to walk directory: {0}")]
-    FailedToWalkDirectory(walkdir::Error)
+    FailedToWalkDirectory(walkdir::Error),
+    #[error(transparent)]
+    IOError(std::io::Error)
+}
+
+impl From<std::io::Error> for CompressionError {
+    fn from(value: std::io::Error) -> Self {
+        CompressionError::IOError(value)
+    }
 }
 
 impl From<ThreadPoolBuildError> for CompressionError {
@@ -184,7 +194,15 @@ pub enum DecompressionError {
     #[error("Failed to build thread pool: {0}")]
     FailedToBuildThreadPool(ThreadPoolBuildError),
     #[error("Failed to walk directory: {0}")]
-    FailedToWalkDirectory(walkdir::Error)
+    FailedToWalkDirectory(walkdir::Error),
+    #[error(transparent)]
+    IOError(std::io::Error)
+}
+
+impl From<std::io::Error> for DecompressionError {
+    fn from(value: std::io::Error) -> Self {
+        DecompressionError::IOError(value)
+    }
 }
 
 impl From<ThreadPoolBuildError> for DecompressionError {

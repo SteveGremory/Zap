@@ -37,3 +37,8 @@ where
 
     fn decryptor(&self, reader: T) -> Result<Self::Decryptor, EncryptorInitError>;
 }
+
+pub enum EncryptionSecret {
+    Password(Vec<u8>),
+    Key(String),
+}

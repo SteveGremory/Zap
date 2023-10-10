@@ -8,7 +8,6 @@ use aes_gcm::{
     aead::{Aead, OsRng, Nonce},
     AeadCore, KeyInit, Aes256Gcm,
 };
-use log::info;
 
 use crate::error::EncryptorInitError;
 
@@ -147,7 +146,6 @@ where
             
             match self.cipher.encrypt(&self.nonce, buf.as_slice()) {
                 Ok(n) => {
-                    info!("Encrypted: {:?}", n.len());
                     self.io.write_all(self.nonce.as_slice())?;
                     self.io.write_all(&n)?;
                 }
@@ -185,7 +183,6 @@ where
 
             match self.cipher.encrypt(&self.nonce, buf.as_slice()) {
                 Ok(n) => {
-                    info!("Encrypted: {:?}", n.len());
                     self.io.write_all(self.nonce.as_slice())?;
                     self.io.write_all(&n)?;
                 }

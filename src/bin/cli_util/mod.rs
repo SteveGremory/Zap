@@ -1,34 +1,28 @@
+mod encryption;
+mod logging;
+mod password;
+
 use std::{
     fs::{self, File},
     io::BufWriter,
 };
 
-use clap::{Parser, Subcommand, ValueEnum};
-use simple_logger::SimpleLogger;
-use zap::{password::{EncryptionType, EncryptionSecret}, error::ZapError};
+use clap::{Parser, Subcommand};
+
+use log::info;
+use zap::{
+    encryption::EncryptionSecret,
+    error::{EncryptionKeyError, EncryptionSecretError, ZapError},
+};
+
 use zapf::{pack_files, unpack_files};
 
-fn init_logger(level: Verbosity) -> Result<(), log::SetLoggerError> {
-    let level = match level {
-        Verbosity::Quiet => log::LevelFilter::Off,
-        Verbosity::Normal => log::LevelFilter::Error,
-        Verbosity::Verbose => log::LevelFilter::Info,
-        Verbosity::Debug => log::LevelFilter::Trace,
-    };
+use crate::cli_util::{
+    logging::init_logger,
+    password::{get_password_confirm, get_password_noconf},
+};
 
-    SimpleLogger::new()
-        .with_level(level)
-        .without_timestamps()
-        .init()
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-pub enum Verbosity {
-    Quiet,
-    Normal,
-    Verbose,
-    Debug,
-}
+use self::{encryption::EncryptionType, logging::Verbosity};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -63,8 +57,7 @@ enum Command {
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
-        log_level: Verbosity,
-
+        verbosity: Verbosity,
     },
     Extract {
         /// Input file
@@ -80,7 +73,12 @@ enum Command {
         #[arg(short, long)]
         keypath: Option<String>,
         #[arg(short, long, default_value = "normal")]
-        log_level: Verbosity,
+        verbosity: Verbosity,
+    },
+    List {
+        archive: String,
+        #[arg(short, long, default_value = "normal")]
+        verbosity: Verbosity,
     },
 }
 
@@ -92,65 +90,113 @@ impl Command {
                 output,
                 encryption,
                 keypath,
-                log_level,
-            } => Self::archive(input, output, encryption, keypath, log_level),
+                verbosity,
+            } => Self::archive(input, output, encryption, keypath, verbosity),
             Command::Extract {
                 input,
                 output,
                 encryption,
                 keypath,
-                log_level,
-            } => Self::extract(input, output, encryption, keypath, log_level),
+                verbosity,
+            } => Self::extract(input, output, encryption, keypath, verbosity),
+            Command::List { archive, verbosity } => Self::list(archive, verbosity),
         }
     }
 
-    fn archive(input: String, output: String, encryption: Option<EncryptionType>, keypath: Option<String>, log_level: Verbosity) -> Result<(), ZapError> {
+    fn archive(
+        input: String,
+        output: String,
+        encryption: Option<EncryptionType>,
+        keypath: Option<String>,
+        verbosity: Verbosity,
+    ) -> Result<(), ZapError> {
+        preamble(verbosity)?;
 
-        init_logger(log_level)?;
-
-        log::error!("pid: {}", std::process::id());
-
-        let enc: Option<EncryptionSecret> =  match encryption {
-            Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
-            None => None
+        let enc: Option<EncryptionSecret> = match encryption {
+            Some(inner) => match inner {
+                EncryptionType::Password => Some(EncryptionSecret::Password(
+                    match get_password_confirm(256) {
+                        Ok(pass) => pass,
+                        Err(e) => return Err(e.into()),
+                    },
+                )),
+                EncryptionType::Key => match keypath {
+                    Some(path) => Some(EncryptionSecret::Key(path)),
+                    None => {
+                        return Err(EncryptionSecretError::Key(
+                            EncryptionKeyError::KeyfileNotProvided,
+                        )
+                        .into())
+                    }
+                },
+            },
+            None => None,
         };
 
-        zap::compress_directory(
-            &input, 
-            "/tmp/unpacked",
-            enc
-        )?;
+        zap::compress_directory(&input, "/tmp/unpacked", enc)?;
 
         let out_file = File::create(output).expect("Could not create file");
 
         let mut out_writer = BufWriter::new(out_file);
 
         pack_files("/tmp/unpacked", &mut out_writer)?;
-        
+
         Ok(fs::remove_dir_all("/tmp/unpacked")?)
     }
 
-    fn extract(input: String, output: String, decryption: Option<EncryptionType>, keypath: Option<String>, log_level: Verbosity) -> Result<(), ZapError> {
-        init_logger(log_level)?;
+    fn extract(
+        input: String,
+        output: String,
+        decryption: Option<EncryptionType>,
+        keypath: Option<String>,
+        verbosity: Verbosity,
+    ) -> Result<(), ZapError> {
+        preamble(verbosity)?;
 
-        log::error!("pid: {}", std::process::id());
-        
-        let enc: Option<EncryptionSecret> =  match decryption {
-            Some(inner) => Some(EncryptionSecret::try_from((inner, keypath))?),
-            None => None
+        let enc: Option<EncryptionSecret> = match decryption {
+            Some(inner) => match inner {
+                EncryptionType::Password => {
+                    Some(EncryptionSecret::Password(match get_password_noconf(256) {
+                        Ok(pass) => pass,
+                        Err(e) => return Err(e.into()),
+                    }))
+                }
+                EncryptionType::Key => match keypath {
+                    Some(path) => Some(EncryptionSecret::Key(path)),
+                    None => {
+                        return Err(EncryptionSecretError::Key(
+                            EncryptionKeyError::KeyfileNotProvided,
+                        )
+                        .into())
+                    }
+                },
+            },
+            None => None,
         };
 
         // Need to check if this function validates path names
         // to prevent directory traversal.
         unpack_files(input, "/tmp/unpacked")?;
 
-        zap::decompress_directory(
-            "/tmp/unpacked", 
-            &output,
-            enc
-        )?;
+        zap::decompress_directory("/tmp/unpacked", &output, enc)?;
 
         Ok(fs::remove_dir_all("/tmp/unpacked")?)
         //Ok(())
     }
+
+    fn list(archive: String, verbosity: Verbosity) -> Result<(), ZapError> {
+        preamble(verbosity)?;
+
+        info!("Listing archive: {}", archive);
+
+        unimplemented!("Archive listing not yet implemented");
+    }
+}
+
+fn preamble(verbosity: Verbosity) -> Result<(), ZapError> {
+    init_logger(verbosity)?;
+
+    log::debug!("pid: {}", std::process::id());
+
+    Ok(())
 }

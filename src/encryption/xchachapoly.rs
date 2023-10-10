@@ -7,7 +7,6 @@ use aes_gcm::{
     KeyInit, AeadCore,
 };
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use log::info;
 use std::{
     io::{Error, ErrorKind, Read, Write},
     vec, marker::PhantomData,
@@ -102,7 +101,6 @@ where T: Write
             
             match self.cipher.encrypt(&nonce, buf.as_slice()) {
                 Ok(n) => {
-                    info!("Encrypted: {:?}", n.len());
                     self.io.write_all(&nonce)?;
                     self.io.write_all(&n)?;
                 }
@@ -144,7 +142,6 @@ where
 
             match self.cipher.encrypt(&nonce, buf.as_slice()) {
                 Ok(n) => {
-                    info!("Encrypted: {:?}", n.len());
                     self.io.write_all(&nonce)?;
                     self.io.write_all(&n)?;
                 }
